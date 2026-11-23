@@ -1,0 +1,16 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
+pydantic-settings>=2.4
+asyncpg>=0.29
+pymongo>=4.13          # Mongo-compatible duplicate-key exception used by the storage adapter
+bcrypt>=4.1
+PyJWT>=2.8
+pyotp>=2.9
+email-validator>=2.1
+python-multipart>=0.0.9
+httpx>=0.27
+pillow>=10.3
+apscheduler>=3.10,<4
+openpyxl>=3.1
+boto3>=1.34            # only needed when STORAGE_BACKEND=s3 (AWS S3, Cloudflare R2, DO Spaces...)

@@ -1,0 +1,10 @@
+# Architecture notes
+- **Database:** PostgreSQL stores the existing document-shaped records in JSONB (`app_documents`) to preserve the app's established data model during this migration. PostgreSQL indexes enforce uniqueness per collection; the primary key is `(collection, doc_id)`. This is a PostgreSQL-backed compatibility layer, not a fully normalized relational schema.
+- **Double-booking prevention:** `room_nights` has one record per physical room per night with `_id = "<room_id>|<date>"`. PostgreSQL's unique key on `(collection, doc_id)` ensures concurrent reservations/holds/blocks cannot own the same room-night. A partially inserted night batch is cleaned up on conflict. Check-out date is never inserted, so same-day turnover works naturally. Holds carry `hold_expires_at`; expired holds count as free.
+- **Dates:** stay dates are `YYYY-MM-DD` strings in hotel time (Africa/Accra); the check-out date is not an occupied night. Timestamps are UTC.
+- **Money:** integer pesewas (minor units) everywhere; GHS only. Prices are snapshotted on the reservation (`pricing`, `pricing_history`).
+- **Payments:** reservation status and payment status are separate. Settlement is idempotent (`pending → success` via atomic update + unique reference), amount/currency are checked, webhooks are HMAC-SHA512 verified.
+- **Pricing precedence:** rule type (date > holiday > seasonal > weekend), then specificity (room > category > global), then priority; fallback room override, then category default. Taxes are configurable in basis points and empty by default.
+- **Auth:** 15-minute JWT access token (kept in memory), rotating refresh token (hashed, httpOnly SameSite=Strict cookie), lockout, `token_version` to revoke sessions, optional TOTP for Super Admin. All permission checks are server-side.
+- **Media:** validated by content (JPEG/PNG/WEBP; SVG rejected), webp variants generated, usage checked before delete.
+- **Audit:** append-only, secrets scrubbed; Super Admin activity hidden from hotel staff except `support.*` actions.

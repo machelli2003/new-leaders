@@ -1,0 +1,51 @@
+import { useState } from 'react'
+import { api } from '@/lib/api'
+import { useAct, useGet } from '@/lib/hooks'
+import { useAuth } from '@/lib/auth'
+import { Button } from '@/components/ui/button'
+import { Check, Field, Input, Select, Textarea } from '@/components/ui/form'
+import { Badge, Card, CardBody, CardHeader, Confirm, Modal, PageHeader, QueryState, StatusBadge, Table, Td, Th } from '@/components/ui/ui'
+import { MediaPicker } from '@/components/MediaPicker'
+import { fmtDate, fromMinor, money, toMinor } from '@/lib/utils'
+
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+export function Pricing() {
+  const { can } = useAuth()
+  const rules = useGet(['rules'], '/pricing/rules'); const cats = useGet(['cats'], '/room-categories'); const rooms = useGet(['rooms'], '/rooms')
+  const promos = useGet(['promos'], '/promotions', undefined, can('promotions.manage'))
+  const [r, setR] = useState<any>(null); const [p, setP] = useState<any>(null); const [del, setDel] = useState<any>(null)
+  const [pc, setPc] = useState(''); const [ps, setPs] = useState(new Date().toISOString().slice(0, 10))
+  const prev = useGet(['pprev'], '/pricing/preview', { category_id: pc, start: ps, days: 31 }, !!pc)
+  const saveRule = useAct(() => { const b = { name: r.name, type: r.type, rate_minor: toMinor(r.rate), category_id: r.category_id || null, room_id: r.room_id || null, start_date: r.start_date || null, end_date: r.end_date || null, weekdays: r.type === 'weekend' ? r.weekdays ?? [4, 5] : [], priority: Number(r.priority) || 0, active: r.active !== false }; return r.id ? api(`/pricing/rules/${r.id}`, { method: 'PATCH', body: b }) : api('/pricing/rules', { body: b }) }, { ok: 'Rule saved', invalidate: [['rules'], ['pprev']], onOk: () => setR(null) })
+  const delRule = useAct(() => api(`/pricing/rules/${del.id}`, { method: 'DELETE' }), { ok: 'Deleted', invalidate: [['rules'], ['pprev']], onOk: () => setDel(null) })
+  const savePromo = useAct(() => { const b = { title: p.title, description: p.description ?? '', code: p.code || null, discount_type: p.discount_type ?? 'percent', value: p.discount_type === 'fixed' ? toMinor(p.value) : Number(p.value) || 0, min_nights: Number(p.min_nights) || 1, valid_from: p.valid_from || null, valid_to: p.valid_to || null, show_on_website: !!p.show_on_website, hide_code: !!p.hide_code, media_id: p.media_id ?? null, status: p.status ?? 'draft' }; return p.id ? api(`/promotions/${p.id}`, { method: 'PATCH', body: b }) : api('/promotions', { body: b }) }, { ok: 'Offer saved', invalidate: [['promos']], onOk: () => setP(null) })
+  const delPromo = useAct((id: string) => api(`/promotions/${id}`, { method: 'DELETE' }), { ok: 'Deleted', invalidate: [['promos']] })
+  const catName = (id?: string) => cats.data?.find((c: any) => c.id === id)?.name
+  const rs = (k: string) => ({ value: r?.[k] ?? '', onChange: (e: any) => setR({ ...r, [k]: e.target.value }) })
+  const ps_ = (k: string) => ({ value: p?.[k] ?? '', onChange: (e: any) => setP({ ...p, [k]: e.target.value }) })
+  return (<><PageHeader title="Pricing & offers" desc="Precedence: date > holiday > seasonal > weekend; then room > category > global; then priority. Fallback: room override, then category default." />
+    <Card className="mb-6"><CardHeader><h3 className="font-semibold">Pricing rules</h3><Button size="sm" onClick={() => setR({ type: 'seasonal', active: true, priority: 0, weekdays: [4, 5] })}>Add rule</Button></CardHeader><CardBody>
+      <QueryState q={rules} empty={{ show: rules.data?.length === 0, text: 'No rules. Rates use each category’s default rate.' } as any}>{rules.data && <Table><thead><tr><Th>Name</Th><Th>Type</Th><Th>Applies to</Th><Th>Dates</Th><Th>Rate</Th><Th>Priority</Th><Th>Active</Th><Th /></tr></thead>
+        <tbody>{rules.data.map((x: any) => <tr key={x.id}><Td>{x.name}</Td><Td>{x.type}</Td><Td>{x.room_id ? `Room ${rooms.data?.find((q: any) => q.id === x.room_id)?.number ?? ''}` : x.category_id ? catName(x.category_id) : 'All rooms'}</Td><Td>{x.type === 'weekend' ? (x.weekdays ?? []).map((d: number) => DAYS[d]).join(', ') : `${fmtDate(x.start_date)} → ${fmtDate(x.end_date)}`}</Td><Td>{money(x.rate_minor)}</Td><Td>{x.priority}</Td><Td>{x.active ? 'Yes' : 'No'}</Td>
+          <Td className="space-x-1"><Button size="sm" variant="outline" onClick={() => setR({ ...x, rate: fromMinor(x.rate_minor) })}>Edit</Button><Button size="sm" variant="ghost" onClick={() => setDel(x)}>Delete</Button></Td></tr>)}</tbody></Table>}</QueryState></CardBody></Card>
+    <Card className="mb-6"><CardHeader><h3 className="font-semibold">Rate preview (what guests will be charged)</h3></CardHeader><CardBody className="space-y-3"><div className="flex flex-wrap gap-2"><Select aria-label="Category" className="w-52" value={pc} onChange={(e) => setPc(e.target.value)}><option value="">Choose category…</option>{(cats.data ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select><Input type="date" aria-label="Start" className="w-44" value={ps} onChange={(e) => setPs(e.target.value)} /></div>
+      {prev.data && <div className="grid grid-cols-2 gap-1 text-xs sm:grid-cols-4 lg:grid-cols-7">{prev.data.map((d: any) => <div key={d.date} className="rounded border border-[var(--border)] p-1.5"><div className="text-[var(--muted)]">{new Date(d.date + 'T00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', weekday: 'short' })}</div><div className="font-semibold">{money(d.rate_minor)}</div><div className="truncate text-[10px] text-[var(--muted)]">{d.source}</div></div>)}</div>}</CardBody></Card>
+    {can('promotions.manage') && <Card><CardHeader><h3 className="font-semibold">Offers & promo codes</h3><Button size="sm" onClick={() => setP({ discount_type: 'percent', status: 'draft', min_nights: 1 })}>Add offer</Button></CardHeader><CardBody>
+      <QueryState q={promos} empty={{ show: promos.data?.length === 0, text: 'No offers yet.' } as any}>{promos.data && <Table><thead><tr><Th>Title</Th><Th>Code</Th><Th>Discount</Th><Th>Valid</Th><Th>Status</Th><Th /></tr></thead><tbody>{promos.data.map((x: any) => <tr key={x.id}><Td>{x.title}</Td><Td className="font-mono">{x.code ?? '—'}</Td><Td>{x.discount_type === 'percent' ? `${x.value}%` : money(x.value)}</Td><Td>{x.valid_from ? `${fmtDate(x.valid_from)} → ${fmtDate(x.valid_to)}` : 'Always'}</Td><Td><StatusBadge status={x.status} /></Td>
+        <Td className="space-x-1"><Button size="sm" variant="outline" onClick={() => setP({ ...x, value: x.discount_type === 'fixed' ? fromMinor(x.value) : x.value })}>Edit</Button><Button size="sm" variant="ghost" onClick={() => delPromo.mutate(x.id)}>Delete</Button></Td></tr>)}</tbody></Table>}</QueryState></CardBody></Card>}
+    <Modal open={!!r} onOpenChange={() => setR(null)} title={r?.id ? 'Edit rule' : 'New pricing rule'}>{r && <div className="space-y-3">
+      <Field label="Name"><Input {...rs('name')} placeholder="e.g. Christmas season" /></Field>
+      <div className="grid grid-cols-2 gap-3"><Field label="Type"><Select {...rs('type')}><option value="seasonal">Seasonal</option><option value="weekend">Weekend</option><option value="holiday">Holiday</option><option value="date">Specific dates</option></Select></Field><Field label="Nightly rate (GHS)"><Input type="number" step="0.01" {...rs('rate')} /></Field>
+        <Field label="Category (blank = all)"><Select {...rs('category_id')}><option value="">All</option>{(cats.data ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></Field><Field label="Priority"><Input type="number" {...rs('priority')} /></Field></div>
+      {r.type === 'weekend' ? <div className="flex flex-wrap gap-3">{DAYS.map((d, i) => <Check key={d} label={d} checked={(r.weekdays ?? []).includes(i)} onChange={(e) => setR({ ...r, weekdays: e.target.checked ? [...(r.weekdays ?? []), i] : (r.weekdays ?? []).filter((x: number) => x !== i) })} />)}</div>
+        : <div className="grid grid-cols-2 gap-3"><Field label="Start"><Input type="date" {...rs('start_date')} /></Field><Field label="End"><Input type="date" {...rs('end_date')} /></Field></div>}
+      <Check label="Active" checked={r.active !== false} onChange={(e) => setR({ ...r, active: e.target.checked })} /><Button loading={saveRule.isPending} disabled={!r.name || !r.rate} onClick={() => saveRule.mutate(undefined)}>Save rule</Button></div>}</Modal>
+    <Modal open={!!p} onOpenChange={() => setP(null)} title={p?.id ? 'Edit offer' : 'New offer'}>{p && <div className="space-y-3">
+      <Field label="Title"><Input {...ps_('title')} /></Field><Field label="Description"><Textarea {...ps_('description')} /></Field>
+      <div className="grid grid-cols-2 gap-3"><Field label="Promo code (optional)"><Input {...ps_('code')} /></Field><Field label="Type"><Select {...ps_('discount_type')}><option value="percent">Percent</option><option value="fixed">Fixed (GHS)</option></Select></Field><Field label={p.discount_type === 'fixed' ? 'Amount (GHS)' : 'Percent off'}><Input type="number" {...ps_('value')} /></Field><Field label="Minimum nights"><Input type="number" min={1} {...ps_('min_nights')} /></Field><Field label="Valid from"><Input type="date" {...ps_('valid_from')} /></Field><Field label="Valid to"><Input type="date" {...ps_('valid_to')} /></Field></div>
+      <MediaPicker label="Image" category="promotion" value={p.media_id} onChange={(x: string | null) => setP({ ...p, media_id: x })} />
+      <div className="flex flex-wrap gap-4"><Check label="Show on website" checked={!!p.show_on_website} onChange={(e) => setP({ ...p, show_on_website: e.target.checked })} /><Check label="Hide the code on website" checked={!!p.hide_code} onChange={(e) => setP({ ...p, hide_code: e.target.checked })} /></div>
+      <Field label="Status"><Select {...ps_('status')}><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></Select></Field><Button loading={savePromo.isPending} disabled={!p.title} onClick={() => savePromo.mutate(undefined)}>Save offer</Button></div>}</Modal>
+    <Confirm open={!!del} onOpenChange={() => setDel(null)} danger title="Delete rule?" desc="Existing reservations keep their price snapshot." confirmLabel="Delete" loading={delRule.isPending} onConfirm={() => delRule.mutate(undefined)} /></>)
+}

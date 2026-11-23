@@ -1,0 +1,29 @@
+# Local/production-like run. Put real values in .env (never commit it).
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-new_leaders_hotel}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-new_leaders_hotel}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes: [postgres_data:/var/lib/postgresql/data]
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-new_leaders_hotel}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports: ["8000:8000"]
+    volumes: [uploads:/app/backend/uploads]
+volumes:
+  postgres_data:
+  uploads:
