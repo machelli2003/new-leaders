@@ -4,6 +4,7 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Cormorant Garamond", Georgia, serif;
+  --font-display: "Bodoni Moda", "Cormorant Garamond", Georgia, serif;
   --color-ivory: #ffffff;
   --color-sand: #eef3f9;
   --color-forest-50: #eef4fb;
@@ -35,6 +36,10 @@ h1, h2, h3 { font-family: var(--font-serif); letter-spacing: -0.01em; }
   from { opacity: 0; }
   to { opacity: 1; }
 }
+@keyframes roomImageFade {
+  from { opacity: 0; transform: scale(1.035); }
+  to { opacity: 1; transform: scale(1); }
+}
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(22px); }
   to { opacity: 1; transform: translateY(0); }
@@ -50,6 +55,7 @@ h1, h2, h3 { font-family: var(--font-serif); letter-spacing: -0.01em; }
 }
 
 .animate-fade-in { animation: fadeIn 0.6s ease-out both; }
+.animate-room-image { animation: roomImageFade 1.2s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-fade-up { animation: fadeUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-ken-burns { animation: kenBurns 22s ease-in-out infinite; }
 .animate-marquee { display: flex; width: max-content; animation: marqueeScroll 32s linear infinite; }

@@ -1,6 +1,6 @@
 # New Leaders Hotel & Events Centre — Eastern Region (Akyem Tafo)
 
-Single-hotel booking, operations and website system. React + TypeScript + Vite + Tailwind (frontend), FastAPI + PostgreSQL (backend), Paystack (GHS).
+Single-hotel booking, operations and website system. React + TypeScript + Vite + Tailwind (frontend), FastAPI + MongoDB (backend), Paystack (GHS).
 
 **No real hotel data is included.** Name, rates, photos, address, policies and taxes are entered by the hotel in the admin. Optional dev sample data is clearly labelled "(SAMPLE)".
 
@@ -11,8 +11,7 @@ Single-hotel booking, operations and website system. React + TypeScript + Vite +
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-cp ../.env.example .env          # set DATABASE_URL and JWT_SECRET (>=32 random chars)
-# Create the local database once (or use pgAdmin): createdb -U postgres new_leaders_hotel
+cp ../.env.example .env          # set MONGODB_URL and JWT_SECRET (>=32 random chars)
 python -m scripts.create_super_admin   # interactive; creates "Machellix"
 uvicorn app.main:app --reload    # http://localhost:8000/docs
 
@@ -24,7 +23,7 @@ npm run dev                      # http://localhost:5173 (proxies /api to :8000)
 
 Optional dev-only sample content: `python -m scripts.seed_sample` (every record is marked SAMPLE; remove before launch).
 
-For Docker Compose, copy `.env.example` to the project root as `.env` before running `docker compose up --build`; Compose starts PostgreSQL and the API together.
+For Docker Compose, copy `.env.example` to the project root as `.env`, set `MONGODB_URL` to the MongoDB Atlas connection string, then run `docker compose up --build`.
 
 ## First-time setup
 1. Sign in at `/super-admin/login`, open **Setup wizard**, and create a **Hotel Admin** under Admin → Staff (Super Admin enters the hotel portal at `/admin`, audited).
@@ -32,9 +31,8 @@ For Docker Compose, copy `.env.example` to the project root as `.env` before run
 3. Publish the hotel in the Setup wizard. Until then the public site shows "coming soon".
 
 ## Tests
-`cd backend && pytest` — backend unit tests (auth/RBAC, booking, payments, pricing, CMS, media, and PostgreSQL query helpers).
+`cd backend && pytest` — backend unit tests (auth/RBAC, booking, payments, pricing, CMS, and media).
 Frontend: `cd frontend && npx tsc -b && npm run build`.
-To run the full suite against PostgreSQL, set `POSTGRES_TEST_DATABASE_URL` to a dedicated database ending in `_test`, then run `pytest`. The suite clears that test database's `app_documents` table before each test; never point it at production or hotel data.
 
 ## Documentation
 - `docs/DEPLOYMENT.md` — environment variables, Paystack, email, storage, hosting, backups
@@ -43,7 +41,7 @@ To run the full suite against PostgreSQL, set `POSTGRES_TEST_DATABASE_URL` to a 
 - API reference: run the backend and open `/docs` (OpenAPI)
 
 ## Known limitations (read before launch)
-- Backend unit tests use an in-memory Mongo-compatible fixture for speed; **run the full flow against PostgreSQL** before go-live.
+- Backend unit tests use an in-memory Mongo-compatible fixture for speed; **run the full flow against MongoDB/Atlas** before go-live.
 - **Paystack, Resend email and S3 storage were never exercised against live services** here (Paystack is tested with a fake gateway incl. signature checks). Test with `sk_test_` keys first.
 - SEO: the SPA gets per-route title/meta/OG/JSON-LD injected by the server, plus sitemap/robots. It is not full pre-rendering.
 - Rate limiter is in-memory (per process). Use a gateway/WAF or Redis-backed limiter for multi-instance.

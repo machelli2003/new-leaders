@@ -6,10 +6,13 @@ import { PublicLayout } from '@/public/Layout'
 import Home from '@/public/Home'
 import { About, Rooms, RoomDetail, Facilities, Restaurant, Events, Gallery, Offers, Contact, FAQ, Policy } from '@/public/Pages'
 import { BookingSearch, Checkout, BookingLookup, BookingManage, PaymentSuccess, PaymentFailed } from '@/public/Booking'
+import { EventBooking } from '@/public/EventBooking'
+import { BookingHub } from '@/public/BookingHub'
 
 const L = (f: () => Promise<any>, n: string): React.ComponentType<any> => lazy(() => f().then((m) => ({ default: m[n] })))
 const Login = L(() => import('@/admin/Auth'), 'Login')
 const ChangePassword = L(() => import('@/admin/Auth'), 'ChangePassword')
+const MfaEnrollment = L(() => import('@/admin/Auth'), 'MfaEnrollment')
 const AdminLayout = L(() => import('@/admin/Layout'), 'AdminLayout')
 const Dashboard = L(() => import('@/admin/Dashboard'), 'Dashboard')
 const Reservations = L(() => import('@/admin/Reservations'), 'Reservations')
@@ -18,6 +21,8 @@ const NewReservation = L(() => import('@/admin/Reservations'), 'NewReservation')
 const PrintReservation = L(() => import('@/admin/Reservations'), 'PrintReservation')
 const CalendarPage = L(() => import('@/admin/Rooms'), 'CalendarPage')
 const RoomsAdmin = L(() => import('@/admin/Rooms'), 'RoomsAdmin')
+const EventVenuesAdmin = L(() => import('@/admin/EventVenues'), 'EventVenuesAdmin')
+const EventBookingsAdmin = L(() => import('@/admin/EventVenues'), 'EventBookingsAdmin')
 const Guests = L(() => import('@/admin/Finance'), 'Guests')
 const Payments = L(() => import('@/admin/Finance'), 'Payments')
 const Refunds = L(() => import('@/admin/Finance'), 'Refunds')
@@ -38,16 +43,18 @@ const P = (path: string, el: JSX.Element, perm?: string) => <Route path={path} e
 
 export default function App() {
   return (
-    <Suspense fallback={<div className="p-10 text-center text-sm text-stone-500">Loading…</div>}>
+    <Suspense fallback={null}>
       <Routes>
         <Route element={<PublicLayout />}>
           <Route index element={<Home />} />
+          <Route path="book" element={<BookingHub />} />
           <Route path="about" element={<About />} />
           <Route path="rooms" element={<Rooms />} />
           <Route path="rooms/:slug" element={<RoomDetail />} />
           <Route path="facilities" element={<Facilities />} />
           <Route path="restaurant" element={<Restaurant />} />
           <Route path="events" element={<Events />} />
+          <Route path="events/book" element={<EventBooking />} />
           <Route path="gallery" element={<Gallery />} />
           <Route path="offers" element={<Offers />} />
           <Route path="contact" element={<Contact />} />
@@ -65,6 +72,7 @@ export default function App() {
         <Route path="/admin/login" element={<Login />} />
         <Route path="/super-admin/login" element={<Login superAdmin />} />
         <Route path="/admin/change-password" element={<RequireAuth><ChangePassword /></RequireAuth>} />
+        <Route path="/super-admin/mfa-setup" element={<RequireAuth superAdmin><MfaEnrollment /></RequireAuth>} />
         <Route path="/admin/reservations/:id/print" element={<RequireAuth perm="reservations.view"><PrintReservation /></RequireAuth>} />
         <Route path="/admin" element={<RequireAuth><AdminLayout /></RequireAuth>}>
           <Route index element={<Navigate to="dashboard" replace />} />
@@ -74,6 +82,8 @@ export default function App() {
           {P('reservations/:id', <ReservationDetail />, 'reservations.view')}
           {P('calendar', <CalendarPage />, 'availability.view')}
           {P('rooms', <RoomsAdmin />, 'rooms.view')}
+          {P('event-venues', <EventVenuesAdmin />, 'rooms.view')}
+          {P('event-bookings', <EventBookingsAdmin />, 'reservations.view')}
           {P('front-desk', <FrontDesk />, 'checkin.manage')}
           {P('housekeeping', <Housekeeping />, 'housekeeping.view')}
           {P('maintenance', <Maintenance />, 'maintenance.manage')}

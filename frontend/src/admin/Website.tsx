@@ -57,7 +57,7 @@ export function Website() {
   const q = useGet(['sections'], '/website/admin/sections'); const [tab, setTab] = useState('home.hero')
   const groups = [...new Set(SECTIONS.map((s) => s.group))]
   const def = SECTIONS.find((s) => s.key === tab)
-  return (<><PageHeader title="Website content" desc="Edit sections as drafts, preview, then publish. Gallery photos come from the Media Library (category “gallery”)." />
+  return (<><PageHeader title="Website content" desc="Edit sections as drafts, preview, then publish. The gallery automatically includes all published images from the Media Library." />
     <div className="grid gap-4 lg:grid-cols-4"><nav className="space-y-3 lg:col-span-1">{groups.map((g) => <div key={g}><div className="mb-1 text-[10px] font-semibold uppercase text-[var(--muted)]">{g}</div>{SECTIONS.filter((s) => s.group === g).map((s) => <button key={s.key} onClick={() => setTab(s.key)} className={`block w-full rounded-md px-2 py-1.5 text-left text-sm ${tab === s.key ? 'bg-[var(--primary)] text-white' : 'hover:bg-[var(--soft)]'}`}>{s.label}</button>)}</div>)}
       <div><div className="mb-1 text-[10px] font-semibold uppercase text-[var(--muted)]">Lists</div><button onClick={() => setTab('items')} className={`block w-full rounded-md px-2 py-1.5 text-left text-sm ${tab === 'items' ? 'bg-[var(--primary)] text-white' : 'hover:bg-[var(--soft)]'}`}>Facilities, FAQs, events, testimonials</button></div></nav>
       <div className="lg:col-span-3">{tab === 'items' ? <Items /> : <QueryState q={q}>{def && <SectionEditor def={def} rec={q.data?.find((s: any) => s.key === def.key)} />}</QueryState>}</div></div></>)

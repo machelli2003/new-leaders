@@ -126,7 +126,7 @@ async def public_offers():
 
 @router.get("/gallery", dependencies=[Depends(public_limiter)])
 async def public_gallery():
-    items = await get_db().media.find({"category": "gallery", "status": "published"}).sort([("order", 1), ("created_at", -1)]).to_list(200)
+    items = await get_db().media.find({"status": "published"}).sort([("order", 1), ("created_at", -1)]).to_list(None)
     return [{"id": m["_id"], "url": m["url"], "variants": m.get("variants", {}), "alt": m.get("alt_text", ""), "title": m.get("title", ""),
              "description": m.get("description", ""), "width": m.get("width"), "height": m.get("height")} for m in items]
 

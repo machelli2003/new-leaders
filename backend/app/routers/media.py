@@ -1,4 +1,4 @@
-"""Central media library. Files in object storage; metadata + references in PostgreSQL."""
+"""Central media library. Files in object storage; metadata and references are stored in MongoDB."""
 from __future__ import annotations
 
 from typing import Literal
@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from ..audit import audit
+from ..config import get_config
 from ..db import get_db
 from ..security import require
 from ..services import storage
@@ -20,6 +21,14 @@ USAGE_SOURCES = [("hotel_settings", "Hotel profile", lambda d: "Hotel profile / 
                  ("website_sections", "Website section", lambda d: d.get("title") or d.get("key", "")),
                  ("content_items", "Website content", lambda d: f"{d.get('type', '')}: {d.get('title') or d.get('question') or ''}"),
                  ("promotions", "Offer", lambda d: d.get("title", ""))]
+
+
+async def _read_upload(file: UploadFile) -> bytes:
+    limit = get_config().max_upload_mb * 1024 * 1024
+    raw = await file.read(limit + 1)
+    if len(raw) > limit:
+        raise HTTPException(413, f"Image exceeds {get_config().max_upload_mb} MB")
+    return raw
 
 
 async def usage_of(db, media_id: str) -> list[dict]:
@@ -63,7 +72,7 @@ async def upload(files: list[UploadFile] = File(...), category: Category = Form(
     db = get_db()
     created = []
     for f in files:
-        raw = await f.read()
+        raw = await _read_upload(f)
         info = storage.store_image(raw)
         name = (f.filename or "image").rsplit(".", 1)[0][:100]
         doc = {"_id": new_id(), "title": title or name, "description": "", "alt_text": alt_text or title or name, "category": category,
@@ -100,7 +109,7 @@ async def replace_media(mid: str, file: UploadFile = File(...), user: dict = Dep
     m = await db.media.find_one({"_id": mid})
     if not m:
         raise HTTPException(404, "Image not found")
-    info = storage.store_image(await file.read())  # same media id, so every place using it updates automatically
+    info = storage.store_image(await _read_upload(file))  # same media id, so every place using it updates automatically
     storage.delete_keys(m.get("storage_keys", []))
     await db.media.update_one({"_id": mid}, {"$set": {"url": info["url"], "variants": info["variants"], "width": info["width"], "height": info["height"],
                                                       "size": info["size"], "storage_keys": info["keys"], "updated_at": utcnow()}})

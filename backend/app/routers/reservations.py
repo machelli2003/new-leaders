@@ -101,7 +101,7 @@ class StaffBookIn(BaseModel):
 
 
 def _list_query(q, status, payment_status, check_in_from, check_in_to, stay_on):
-    query: dict = {}
+    query: dict = {"booking_type": {"$ne": "event"}}
     if status:
         query["status"] = {"$in": status.split(",")}
     if payment_status:
@@ -151,7 +151,7 @@ async def create_manual(body: StaffBookIn, user: dict = Depends(require("reserva
 
 async def _load(rid: str) -> dict:
     r = await get_db().reservations.find_one({"_id": rid})
-    if not r:
+    if not r or r.get("booking_type") == "event":
         raise HTTPException(404, "Reservation not found")
     return r
 
@@ -159,7 +159,7 @@ async def _load(rid: str) -> dict:
 @router.get("/reservations/{rid}")
 async def get_reservation(rid: str, user: dict = Depends(require("reservations.view"))):
     d = await rs.detail(get_db(), rid)
-    if not d:
+    if not d or d["reservation"].get("booking_type") == "event":
         raise HTTPException(404, "Reservation not found")
     s = await get_settings(get_db())
     out = ser(d)
@@ -414,7 +414,12 @@ async def approve_refund(fid: str, user: dict = Depends(require("refunds.manage"
     r = await db.refunds.find_one({"_id": fid})
     if not r or r["status"] != "requested":
         raise HTTPException(409, "Refund is not awaiting approval")
-    await db.refunds.update_one({"_id": fid}, {"$set": {"status": "approved", "approved_by": user["_id"], "updated_at": utcnow()}})
+    changed = await db.refunds.update_one(
+        {"_id": fid, "status": "requested"},
+        {"$set": {"status": "approved", "approved_by": user["_id"], "updated_at": utcnow()}},
+    )
+    if not changed.matched_count:
+        raise HTTPException(409, "Refund is no longer awaiting approval")
     await audit(user, "refund.approve", "refund", fid, after={"amount": r["amount"]})
     return ser(await db.refunds.find_one({"_id": fid}))
 
@@ -434,7 +439,12 @@ async def reject_refund(fid: str, body: ProcessIn, user: dict = Depends(require(
     r = await db.refunds.find_one({"_id": fid})
     if not r or r["status"] not in ("requested", "approved"):
         raise HTTPException(409, "Refund cannot be rejected")
-    await db.refunds.update_one({"_id": fid}, {"$set": {"status": "rejected", "note": body.note, "updated_at": utcnow()}})
+    changed = await db.refunds.update_one(
+        {"_id": fid, "status": {"$in": ["requested", "approved"]}},
+        {"$set": {"status": "rejected", "note": body.note, "updated_at": utcnow()}},
+    )
+    if not changed.matched_count:
+        raise HTTPException(409, "Refund can no longer be rejected")
     await finance.recompute(db, r["reservation_id"])
     await audit(user, "refund.reject", "refund", fid, note=body.note)
     return ser(await db.refunds.find_one({"_id": fid}))

@@ -1,7 +1,7 @@
-"""Availability engine backed by the PostgreSQL `room_nights` document collection.
+"""Availability engine backed by the MongoDB `room_nights` document collection.
 
 Each occupied night of a physical room is one document with _id "<room_id>|<YYYY-MM-DD>".
-The unique (collection, doc_id) key guarantees that two reservations/holds/blocks cannot own the
+The unique _id key guarantees that two reservations/holds/blocks cannot own the
 same room-night, even under concurrent requests. Check-out date is never inserted, so same-day
 turnover works naturally.
 """

@@ -73,10 +73,15 @@ export function BookingSearch() {
 
 // ---------------- Checkout ----------------
 const schema = z.object({
-  name: z.string().trim().min(2, 'Please enter your full name'), email: z.string().trim().email('Enter a valid email'),
+  name: z.string().trim().min(2, 'Please enter your full name'),
+  email: z.string().trim().email('Enter a valid email').or(z.literal('')),
   phone: z.string().trim().min(7, 'Enter a valid phone number').regex(/^[0-9+()\-\s]+$/, 'Digits only, e.g. +233 20 000 0000'),
   country: z.string().trim().min(2, 'Required'), special_requests: z.string().max(1000).optional(),
-  payment: z.enum(['full', 'deposit', 'hotel']), terms: z.literal(true, { errorMap: () => ({ message: 'Please accept the terms to continue' }) }),
+  payment: z.enum(['full', 'deposit', 'hotel']), terms: z.literal(true, { error: 'Please accept the terms to continue' }),
+}).superRefine((values, ctx) => {
+  if (values.payment !== 'hotel' && !values.email) {
+    ctx.addIssue({ code: 'custom', path: ['email'], message: 'Email is required for online Paystack payments' })
+  }
 })
 type FormVals = z.infer<typeof schema>
 
@@ -88,12 +93,15 @@ export function Checkout() {
   const [promo, setPromo] = useState('')
   const body = saved ? { ...saved.stay, selections: saved.selections.map(({ category_id, quantity }) => ({ category_id, quantity })), promo_code: promo || undefined } : null
   const quote = useQuery({ queryKey: ['quote', body], enabled: !!body, retry: false, queryFn: () => api<any>('/bookings/quote', { auth: false, body }) })
-  const { register, handleSubmit, formState: { errors }, watch } = useForm<FormVals>({ resolver: zodResolver(schema), defaultValues: { country: 'Ghana', payment: 'full' } as any })
+  const { register, handleSubmit, formState: { errors }, watch } = useForm<FormVals>({ resolver: zodResolver(schema), defaultValues: { email: '', country: 'Ghana', payment: 'full' } as any })
   const q = quote.data
   const submit = useMutation({
     mutationFn: async (v: FormVals) => {
-      const res = await api<any>('/bookings', { auth: false, body: { ...body, guest: { name: v.name, email: v.email, phone: v.phone, country: v.country }, special_requests: v.special_requests ?? '', pay_at_hotel: v.payment === 'hotel' } })
-      sessionStorage.setItem(`nlh_email_${res.reference}`, v.email)
+      const email = v.email.trim()
+      const res = await api<any>('/bookings', { auth: false, body: { ...body, guest: { name: v.name, email: email || null, phone: v.phone, country: v.country }, special_requests: v.special_requests ?? '', pay_at_hotel: v.payment === 'hotel' } })
+      if (email) sessionStorage.setItem(`nlh_email_${res.reference}`, email)
+      else sessionStorage.removeItem(`nlh_email_${res.reference}`)
+      sessionStorage.setItem(`nlh_phone_${res.reference}`, v.phone)
       if (v.payment === 'hotel') return { reference: res.reference, url: null as string | null }
       const pay = await api<any>('/bookings/pay', { auth: false, body: { reference: res.reference, email: v.email, option: v.payment } })
       return { reference: res.reference, url: pay.authorization_url as string }
@@ -111,8 +119,8 @@ export function Checkout() {
         <Card className="border-sand bg-white"><CardBody className="space-y-4"><h2 className="text-2xl font-semibold text-forest-800">Guest details</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Full name" error={errors.name?.message} className="sm:col-span-2"><Input autoComplete="name" {...register('name')} /></Field>
-            <Field label="Email" error={errors.email?.message} hint="Your confirmation is sent here"><Input type="email" autoComplete="email" {...register('email')} /></Field>
-            <Field label="Telephone" error={errors.phone?.message}><Input type="tel" autoComplete="tel" {...register('phone')} /></Field>
+            <Field label={`Email${pay === 'hotel' ? ' (optional)' : ''}`} error={errors.email?.message} hint={pay === 'hotel' ? 'Optional. Add an email for email updates; booking lookup also works with your phone.' : 'Required by Paystack for online payment; email updates are sent here.'}><Input type="email" autoComplete="email" required={pay !== 'hotel'} {...register('email')} /></Field>
+            <Field label="WhatsApp / telephone" error={errors.phone?.message}><Input type="tel" autoComplete="tel" {...register('phone')} /></Field>
             <Field label="Country" error={errors.country?.message}><Input autoComplete="country-name" {...register('country')} /></Field>
             <Field label="Special requests (optional)" className="sm:col-span-2"><Textarea {...register('special_requests')} placeholder="Late arrival, extra bed… (subject to availability)" /></Field></div></CardBody></Card>
         <Card className="border-sand bg-white"><CardBody className="space-y-3"><h2 className="text-2xl font-semibold text-forest-800">Payment</h2>
@@ -144,25 +152,38 @@ const Row = ({ l, v }: { l: string; v: string }) => <div className="flex justify
 // ---------------- Lookup & manage ----------------
 export function BookingLookup() {
   const nav = useNavigate()
-  const [ref, setRef] = useState(''); const [email, setEmail] = useState('')
-  return (<><Seo title="Find your booking" path="/booking/lookup" /><PageHero title="Find your booking" sub="Enter your booking reference and the email used when booking." />
+  const [ref, setRef] = useState(''); const [contact, setContact] = useState('')
+  return (<><Seo title="Find your booking" path="/booking/lookup" /><PageHero title="Find your booking" sub="Enter your booking reference and the email address or phone number used when booking." />
     <Container className="max-w-md py-12"><Card className="border-sand bg-white"><CardBody>
-      <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); sessionStorage.setItem(`nlh_email_${ref.trim().toUpperCase()}`, email.trim()); nav(`/booking/${ref.trim().toUpperCase()}`) }}>
+      <form className="space-y-4" onSubmit={(e) => {
+        e.preventDefault()
+        const reference = ref.trim().toUpperCase()
+        const value = contact.trim()
+        const isEmail = value.includes('@')
+        sessionStorage.removeItem(`nlh_email_${reference}`)
+        sessionStorage.removeItem(`nlh_phone_${reference}`)
+        sessionStorage.setItem(`nlh_${isEmail ? 'email' : 'phone'}_${reference}`, value)
+        nav(`/booking/${reference}`)
+      }}>
         <Field label="Booking reference"><Input required value={ref} onChange={(e) => setRef(e.target.value)} placeholder="NLH-2026-000123" /></Field>
-        <Field label="Email"><Input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+        <Field label="Email or WhatsApp number"><Input required value={contact} onChange={(e) => setContact(e.target.value)} /></Field>
         <Button variant="gold" className="w-full">Find booking</Button></form></CardBody></Card></Container></>)
 }
 
 export function BookingManage() {
   const { reference = '' } = useParams()
   const email = sessionStorage.getItem(`nlh_email_${reference}`) ?? ''
+  const phone = sessionStorage.getItem(`nlh_phone_${reference}`) ?? ''
+  const contact = email ? { email } : { phone }
+  const { data: site } = useSite()
   const [cancelOpen, setCancelOpen] = useState(false); const [reason, setReason] = useState('')
-  const q = useQuery({ queryKey: ['booking', reference, email], enabled: !!email, retry: false, queryFn: () => api<any>('/bookings/lookup', { auth: false, body: { reference, email } }) })
-  const prev = useQuery({ queryKey: ['cprev', reference], enabled: cancelOpen, queryFn: () => api<any>('/bookings/cancel-preview', { auth: false, body: { reference, email } }) })
-  const pay = useMutation({ mutationFn: (option: string) => api<any>('/bookings/pay', { auth: false, body: { reference, email, option } }), onSuccess: (r) => { window.location.href = r.authorization_url }, onError: (e) => toast.error(errMsg(e)) })
-  const cancel = useMutation({ mutationFn: () => api<any>('/bookings/cancel-request', { auth: false, body: { reference, email, reason } }), onSuccess: () => { toast.success('Cancellation request sent'); setCancelOpen(false); q.refetch() }, onError: (e) => toast.error(errMsg(e)) })
+  const q = useQuery({ queryKey: ['booking', reference, email, phone], enabled: !!(email || phone), retry: false, queryFn: () => api<any>('/bookings/lookup', { auth: false, body: { reference, ...contact } }) })
+  const prev = useQuery({ queryKey: ['cprev', reference, email, phone], enabled: cancelOpen, queryFn: () => api<any>('/bookings/cancel-preview', { auth: false, body: { reference, ...contact } }) })
+  const pay = useMutation({ mutationFn: (option: string) => api<any>('/bookings/pay', { auth: false, body: { reference, ...contact, option } }), onSuccess: (r) => { window.location.href = r.authorization_url }, onError: (e) => toast.error(errMsg(e)) })
+  const cancel = useMutation({ mutationFn: () => api<any>('/bookings/cancel-request', { auth: false, body: { reference, ...contact, reason } }), onSuccess: () => { toast.success('Cancellation request sent'); setCancelOpen(false); q.refetch() }, onError: (e) => toast.error(errMsg(e)) })
   const b = q.data
-  if (!email) return <BookingLookup />
+  if (!email && !phone) return <BookingLookup />
+  const whatsapp = b && whatsappBookingUrl(site?.profile?.socials?.whatsapp, bookingWhatsAppMessage(b, site?.profile?.name))
   return (<><Seo title="Your booking" noindex /><PageHero title="Your booking" sub={reference} />
     <Container className="max-w-3xl space-y-5 py-10">
       {q.isLoading && <Skeleton className="h-64" />}
@@ -170,16 +191,26 @@ export function BookingManage() {
       {b && <>
         <Card className="border-sand bg-white"><CardBody className="space-y-4">
           <div className="flex flex-wrap items-center gap-2"><StatusBadge status={b.status} /><StatusBadge status={b.payment_status} /></div>
-          {b.status === 'pending' && b.hold_expires_at && <p className="flex items-start gap-2 rounded bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-4 w-4 shrink-0" />Your room is held until {fmtDateTime(b.hold_expires_at)}. Complete payment to confirm it.</p>}
+          {b.status === 'pending' && b.hold_expires_at && <p className="flex items-start gap-2 rounded bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-4 w-4 shrink-0" />Your {b.booking_type === 'event' ? 'event time' : 'room'} is held until {fmtDateTime(b.hold_expires_at)}. Complete payment to confirm it.</p>}
           {b.status === 'cancellation_requested' && <p className="rounded bg-sky-50 p-3 text-sm text-sky-900">Your cancellation request is being reviewed by the hotel.</p>}
-          <dl className="grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-[#7a847e]">Guest</dt><dd>{b.guest.name}</dd></div><div><dt className="text-[#7a847e]">Stay</dt><dd>{fmtDate(b.check_in)} → {fmtDate(b.check_out)} ({b.nights} nights)</dd></div>
-            <div><dt className="text-[#7a847e]">Guests</dt><dd>{b.adults} adults{b.children ? `, ${b.children} children` : ''}</dd></div><div><dt className="text-[#7a847e]">Rooms</dt><dd>{b.rooms?.filter((r: any) => r.status !== 'cancelled').map((r: any) => r.category_name).join(', ')}</dd></div></dl>
+          <dl className="grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-[#7a847e]">Guest</dt><dd>{b.guest.name}</dd></div>
+            {b.booking_type === 'event' ? <>
+              <div><dt className="text-[#7a847e]">Venue</dt><dd>{b.event_booking.venue_name}</dd></div>
+              <div><dt className="text-[#7a847e]">Event date & time</dt><dd>{fmtDate(b.event_booking.date)} · {b.event_booking.start_time}–{b.event_booking.end_time}</dd></div>
+              <div><dt className="text-[#7a847e]">Event / guests</dt><dd>{b.event_booking.event_type} · {b.event_booking.attendees}</dd></div>
+            </> : <>
+              <div><dt className="text-[#7a847e]">Stay</dt><dd>{fmtDate(b.check_in)} → {fmtDate(b.check_out)} ({b.nights} nights)</dd></div>
+              <div><dt className="text-[#7a847e]">Guests</dt><dd>{b.adults} adults{b.children ? `, ${b.children} children` : ''}</dd></div>
+              <div><dt className="text-[#7a847e]">Rooms</dt><dd>{b.rooms?.filter((r: any) => r.status !== 'cancelled').map((r: any) => r.category_name).join(', ')}</dd></div>
+            </>}</dl>
           <div className="space-y-1 border-t border-sand pt-3 text-sm"><Row l="Total" v={money(b.total_amount, b.pricing.currency)} /><Row l="Paid" v={money(b.amount_paid, b.pricing.currency)} /><div className="flex justify-between font-semibold text-forest-800"><span>Balance</span><span>{money(b.balance, b.pricing.currency)}</span></div></div>
           {b.payments?.length > 0 && <div className="border-t border-sand pt-3 text-xs text-[#5b665f]"><div className="mb-1 font-medium">Payments</div>{b.payments.map((p: any) => <div key={p.reference} className="flex justify-between"><span>{p.receipt_number} · {p.method}</span><span>{money(p.amount, b.pricing.currency)}</span></div>)}</div>}
         </CardBody></Card>
         <div className="flex flex-wrap gap-3 no-print">
-          {b.payment_options?.deposit && <Button variant="gold" loading={pay.isPending} onClick={() => pay.mutate('deposit')}>Pay deposit {money(b.payment_options.deposit, b.pricing.currency)}</Button>}
-          {b.payment_options?.full > 0 && <Button variant={b.payment_options?.deposit ? 'outline' : 'gold'} loading={pay.isPending} onClick={() => pay.mutate('full')}>{b.amount_paid > 0 ? 'Pay balance' : 'Pay in full'} {money(b.payment_options.full, b.pricing.currency)}</Button>}
+          {b.guest.email && b.payment_options?.deposit && <Button variant="gold" loading={pay.isPending} onClick={() => pay.mutate('deposit')}>Pay deposit {money(b.payment_options.deposit, b.pricing.currency)}</Button>}
+          {b.guest.email && b.payment_options?.full > 0 && <Button variant={b.payment_options?.deposit ? 'outline' : 'gold'} loading={pay.isPending} onClick={() => pay.mutate('full')}>{b.amount_paid > 0 ? 'Pay balance' : 'Pay in full'} {money(b.payment_options.full, b.pricing.currency)}</Button>}
+          {!b.guest.email && b.payment_options && <p className="w-full text-sm text-[#5b665f]">Online payment requires an email address for Paystack. Contact the hotel to add one to this booking.</p>}
+          {whatsapp && <Button asChild variant="outline"><a href={whatsapp} target="_blank" rel="noreferrer noopener">Open WhatsApp to share booking details</a></Button>}
           <Button variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4" />Print</Button>
           {['pending', 'confirmed'].includes(b.status) && <Button variant="ghost" className="text-red-700" onClick={() => setCancelOpen(true)}>Request cancellation</Button>}
         </div>
@@ -188,6 +219,34 @@ export function BookingManage() {
           <Textarea placeholder="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
           <div className="flex gap-2"><Button variant="destructive" loading={cancel.isPending} onClick={() => cancel.mutate()}>Send request</Button><Button variant="outline" onClick={() => setCancelOpen(false)}>Keep booking</Button></div></CardBody></Card>}
       </>}</Container></>)
+}
+
+function bookingWhatsAppMessage(booking: any, hotelName?: string) {
+  const details = booking.booking_type === 'event'
+    ? `Event: ${booking.event_booking.venue_name}, ${fmtDate(booking.event_booking.date)} ${booking.event_booking.start_time}–${booking.event_booking.end_time} (${booking.event_booking.attendees} guests)`
+    : `Stay: ${fmtDate(booking.check_in)} to ${fmtDate(booking.check_out)}`
+  return [
+    `Hello${hotelName ? ` ${hotelName}` : ''}, please confirm my booking details.`,
+    `Reference: ${booking.reference}`,
+    `Guest: ${booking.guest.name}`,
+    details,
+    `Status: ${booking.status}`,
+  ].join('\n')
+}
+
+function whatsappBookingUrl(value: string | undefined, message: string): string | undefined {
+  if (!value) return undefined
+  let phone = value
+  try {
+    const url = new URL(value)
+    if (url.hostname === 'wa.me') phone = url.pathname
+    else if (url.hostname === 'api.whatsapp.com') phone = url.searchParams.get('phone') ?? ''
+    else return undefined
+  } catch {
+    phone = value
+  }
+  const digits = phone.replace(/\D/g, '')
+  return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(message)}` : undefined
 }
 
 // ---------------- Payment result pages ----------------
@@ -208,11 +267,11 @@ export function PaymentSuccess() {
     <Container className="max-w-lg py-12"><Card className="border-sand bg-white"><CardBody className="space-y-4 text-center">
       {!ref ? <><XCircle className="mx-auto h-12 w-12 text-red-500" /><p>No payment reference was provided.</p></> :
         s?.status === 'success' ? <><CheckCircle2 className="mx-auto h-14 w-14 text-emerald-600" /><h2 className="text-3xl font-semibold text-forest-800">Payment received</h2>
-          {s.reservation_status === 'confirmed' ? <p className="text-[#4b5750]">Your booking <b>{s.reference}</b> is confirmed. A confirmation email is on its way.</p> : s.needs_attention ? <p className="text-amber-800">We received your payment but could not secure the room. The hotel will contact you about a refund. Reference <b>{s.reference}</b>.</p> : <p>Booking <b>{s.reference}</b> has been updated.</p>}
+          {s.reservation_status === 'confirmed' ? <p className="text-[#4b5750]">Your booking <b>{s.reference}</b> is confirmed. View your booking for details and WhatsApp contact options.</p> : s.needs_attention ? <p className="text-amber-800">We received your payment but could not secure the {s.booking_type === 'event' ? 'event time' : 'room'}. The hotel will contact you about a refund. Reference <b>{s.reference}</b>.</p> : <p>Booking <b>{s.reference}</b> has been updated.</p>}
           <Button asChild variant="gold"><Link to={`/booking/${s.reference}`}>View booking</Link></Button></> :
         s?.status === 'flagged' ? <><AlertTriangle className="mx-auto h-12 w-12 text-amber-500" /><p>We could not automatically verify this payment. The hotel has been notified. Please contact us quoting <b>{s.reference}</b>.</p></> :
         <><Loader2 className="mx-auto h-12 w-12 animate-spin text-gold-500" /><h2 className="text-2xl font-semibold text-forest-800">Confirming your payment…</h2><p className="text-sm text-[#5b665f]">We verify every payment directly with Paystack. This usually takes a few seconds.</p>
-          {tries > 12 && <p className="text-sm text-amber-800">This is taking longer than expected. You will receive an email as soon as it is confirmed; you can also look up your booking later.</p>}</>}
+          {tries > 12 && <p className="text-sm text-amber-800">This is taking longer than expected. Check your booking status again shortly, or look up your booking later.</p>}</>}
     </CardBody></Card></Container></>)
 }
 
@@ -222,6 +281,6 @@ export function PaymentFailed() {
   const q = useQuery({ queryKey: ['pf', ref], enabled: !!ref, retry: false, queryFn: () => api<any>(`/bookings/payment-status/${ref}`, { auth: false }) })
   return (<><Seo title="Payment not completed" noindex /><PageHero title="Payment not completed" />
     <Container className="max-w-lg py-12"><Card className="border-sand bg-white"><CardBody className="space-y-4 text-center"><XCircle className="mx-auto h-14 w-14 text-red-500" />
-      <p className="text-[#4b5750]">Your payment was not completed and you have not been charged for this attempt. {q.data?.reference ? <>Your room may still be held for a short time under <b>{q.data.reference}</b>.</> : null}</p>
+      <p className="text-[#4b5750]">Your payment was not completed and you have not been charged for this attempt. {q.data?.reference ? <>Your {q.data.booking_type === 'event' ? 'event time' : 'room'} may still be held for a short time under <b>{q.data.reference}</b>.</> : null}</p>
       <div className="flex justify-center gap-3">{q.data?.reference && <Button asChild variant="gold"><Link to={`/booking/${q.data.reference}`}>Try payment again</Link></Button>}<Button asChild variant="outline"><Link to="/booking/search">New search</Link></Button></div></CardBody></Card></Container></>)
 }

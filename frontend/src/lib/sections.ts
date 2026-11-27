@@ -13,15 +13,18 @@ export const SECTIONS: SectionDef[] = [
     { name: 'highlights', label: 'Highlights', type: 'list', fields: [{ name: 'title', label: 'Title', type: 'text' }, { name: 'text', label: 'Text', type: 'textarea' }] } ] },
   { key: 'restaurant', label: 'Restaurant & dining', group: 'Pages', fields: [
     { name: 'title', label: 'Title', type: 'text' }, { name: 'intro', label: 'Introduction', type: 'textarea' }, { name: 'opening_hours', label: 'Opening hours', type: 'textarea' },
+    { name: 'menu_url', label: 'Menu PDF URL', type: 'text' },
     { name: 'menu_highlights', label: 'Menu highlights', type: 'list', fields: [{ name: 'name', label: 'Dish', type: 'text' }, { name: 'description', label: 'Description', type: 'text' }, { name: 'price_minor', label: 'Price (GHS)', type: 'money' }] },
     { name: 'media_ids', label: 'Photos', type: 'medias' } ] },
   { key: 'events', label: 'Events & conferences', group: 'Pages', fields: [
     { name: 'title', label: 'Title', type: 'text' }, { name: 'intro', label: 'Introduction', type: 'textarea' }, { name: 'capacity_text', label: 'Capacity & halls', type: 'textarea' },
     { name: 'services', label: 'Services offered', type: 'list', fields: [{ name: 'title', label: 'Title', type: 'text' }, { name: 'text', label: 'Text', type: 'textarea' }] },
-    { name: 'enquiry_text', label: 'How to enquire', type: 'textarea' }, { name: 'media_ids', label: 'Photos', type: 'medias' } ] },
+    { name: 'enquiry_text', label: 'How to enquire', type: 'textarea' }, { name: 'venue_url', label: 'Events venue website', type: 'text' }, { name: 'media_ids', label: 'Photos', type: 'medias' } ] },
   { key: 'contact', label: 'Contact page', group: 'Pages', fields: [
     { name: 'intro', label: 'Introduction', type: 'textarea' }, { name: 'opening_hours', label: 'Reception hours', type: 'text' },
-    { name: 'directions', label: 'Directions / landmarks', type: 'textarea' }, { name: 'map_embed_url', label: 'Google Maps embed URL', type: 'text', hint: 'Paste the src of a Google Maps embed iframe' } ] },
+    { name: 'directions', label: 'Directions / landmarks', type: 'textarea' }, { name: 'directions_url', label: 'Google Maps directions URL', type: 'text' },
+    { name: 'booking_url', label: 'External booking form URL', type: 'text' },
+    { name: 'map_embed_url', label: 'Google Maps embed URL', type: 'text', hint: 'Paste the src of a Google Maps embed iframe' } ] },
   { key: 'footer', label: 'Footer', group: 'Pages', fields: [{ name: 'about', label: 'Short footer text', type: 'textarea' }, { name: 'copyright', label: 'Copyright line', type: 'text' }] },
   { key: 'policy.privacy', label: 'Privacy policy', group: 'Policies', fields: [{ name: 'title', label: 'Title', type: 'text' }, { name: 'body', label: 'Policy text', type: 'textarea' }] },
   { key: 'policy.terms', label: 'Terms & conditions', group: 'Policies', fields: [{ name: 'title', label: 'Title', type: 'text' }, { name: 'body', label: 'Policy text', type: 'textarea' }] },

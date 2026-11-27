@@ -1,101 +1,71 @@
 {
+  "source_url": "https://newleadershotelandeventcentre.com/",
   "asset_id": "bfd7518b-95bf-49de-83a5-1a42796015bc",
-  "logo_hires": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:400,h:400,m",
-  "logo_urls": [
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:180,h:180,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:57,h:57,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:60,h:60,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:144,h:144,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=h:100,cg:true,m/qt=q:95",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:120,h:120,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:114,h:114,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:72,h:72,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:152,h:152,m"
-  ],
-  "content_images": [
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/DJI_20240725161443_0022_D-d11f1e9.jpg",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26609.jpg",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26686.jpg",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26715.jpg",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26718.jpg",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26849.jpg",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26944.jpg",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM%20(1",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg"
-  ],
-  "all_images": [
-    "https://img1.wsimg.com/blobby/go/bfd7518b-95bf-49de-83a5-1a42796015bc/TAFO%20DESCRIPT.pdf",
-    "https://img1.wsimg.com/blobby/go/bfd7518b-95bf-49de-83a5-1a42796015bc/gpub/509787c657a3be65/script.js",
-    "https://img1.wsimg.com/blobby/go/bfd7518b-95bf-49de-83a5-1a42796015bc/gpub/b39d18f265fb3a72/script.js",
-    "https://img1.wsimg.com/ceph-p3-01/website-builder-data-prod/static/widgets/UX.7.3.8.js",
-    "https://img1.wsimg.com/gfonts/s/adamina/v22/j8_r6-DH1bjoc-dwi-3UEA.woff2",
-    "https://img1.wsimg.com/gfonts/s/poppins/v24/pxiByp8kv8JHgFVrLCz7Z11lFc-K.woff2",
-    "https://img1.wsimg.com/gfonts/s/poppins/v24/pxiByp8kv8JHgFVrLCz7Z1JlFc-K.woff2",
-    "https://img1.wsimg.com/gfonts/s/poppins/v24/pxiByp8kv8JHgFVrLCz7Z1xlFQ.woff2",
-    "https://img1.wsimg.com/gfonts/s/poppins/v24/pxiByp8kv8JHgFVrLDz8Z11lFc-K.woff2",
-    "https://img1.wsimg.com/gfonts/s/poppins/v24/pxiByp8kv8JHgFVrLDz8Z1JlFc-K.woff2",
-    "https://img1.wsimg.com/gfonts/s/poppins/v24/pxiByp8kv8JHgFVrLDz8Z1xlFQ.woff2",
-    "https://img1.wsimg.com/gfonts/s/poppins/v24/pxiByp8kv8JHgFVrLEj6Z11lFc-K.woff2",
-    "https://img1.wsimg.com/gfonts/s/poppins/v24/pxiByp8kv8JHgFVrLEj6Z1JlFc-K.woff2",
-    "https://img1.wsimg.com/gfonts/s/poppins/v24/pxiByp8kv8JHgFVrLEj6Z1xlFQ.woff2",
-    "https://img1.wsimg.com/gfonts/s/poppins/v24/pxiEyp8kv8JHgFVrJJbecmNE.woff2",
-    "https://img1.wsimg.com/gfonts/s/poppins/v24/pxiEyp8kv8JHgFVrJJfecg.woff2",
-    "https://img1.wsimg.com/gfonts/s/poppins/v24/pxiEyp8kv8JHgFVrJJnecmNE.woff2",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26686.jpg/:/cr=t:0%25,l:0%25,w:100%25,h:68.17%25/rs=w:515,h:234,cg:true",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM%20(1",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:100%25",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:1023,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:1279,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:1350,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:1534,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:1535,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:1920,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:2046,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:2301,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:2558,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:3069,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:3070,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:3837,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:3840,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:450,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:4605,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:5760,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:767,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg/:/cr=t:5.58%25,l:0%25,w:88.83%25,h:88.83%25/rs=w:900,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:100%25",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:1023,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:1279,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:1350,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:1534,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:1535,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:1920,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:2046,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:2301,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:2558,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:3069,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:3070,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:3837,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:3840,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:450,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:4605,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:5760,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:767,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg/:/cr=t:0%25,l:0%25,w:100%25,h:100%25/rs=w:900,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/favicon/4c249eae-ca21-4bb7-b33e-f7e41f8e5e9f.jpg/:/rs=w:16,h:16,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/favicon/4c249eae-ca21-4bb7-b33e-f7e41f8e5e9f.jpg/:/rs=w:24,h:24,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/favicon/4c249eae-ca21-4bb7-b33e-f7e41f8e5e9f.jpg/:/rs=w:32,h:32,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/favicon/4c249eae-ca21-4bb7-b33e-f7e41f8e5e9f.jpg/:/rs=w:48,h:48,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/favicon/4c249eae-ca21-4bb7-b33e-f7e41f8e5e9f.jpg/:/rs=w:64,h:64,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=h:100,cg:true,m/qt=q:95",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:114,h:114,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:120,h:120,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:144,h:144,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:152,h:152,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:180,h:180,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:57,h:57,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:60,h:60,m",
-    "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png/:/rs=w:72,h:72,m",
-    "https://img1.wsimg.com/signals/js/clients/scc-c2/scc-c2.min.js"
+  "images": [
+    {
+      "filename": "DJI_20240725161443_0022_D-d11f1e9.jpg",
+      "source_url": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/DJI_20240725161443_0022_D-d11f1e9.jpg",
+      "category": "gallery"
+    },
+    {
+      "filename": "R6M26609.jpg",
+      "source_url": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26609.jpg",
+      "category": "gallery"
+    },
+    {
+      "filename": "R6M26686.jpg",
+      "source_url": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26686.jpg",
+      "category": "gallery"
+    },
+    {
+      "filename": "R6M26715.jpg",
+      "source_url": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26715.jpg",
+      "category": "gallery"
+    },
+    {
+      "filename": "R6M26718.jpg",
+      "source_url": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26718.jpg",
+      "category": "gallery"
+    },
+    {
+      "filename": "R6M26849.jpg",
+      "source_url": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26849.jpg",
+      "category": "gallery"
+    },
+    {
+      "filename": "R6M26944.jpg",
+      "source_url": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/R6M26944.jpg",
+      "category": "gallery"
+    },
+    {
+      "filename": "WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM%20(1).jpeg",
+      "source_url": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM%20(1).jpeg",
+      "category": "gallery"
+    },
+    {
+      "filename": "WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg",
+      "source_url": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.45%20AM.jpeg",
+      "category": "gallery"
+    },
+    {
+      "filename": "WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg",
+      "source_url": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/WhatsApp%20Image%202025-11-21%20at%205.44.46%20AM.jpeg",
+      "category": "gallery"
+    },
+    {
+      "filename": "4c249eae-ca21-4bb7-b33e-f7e41f8e5e9f.jpg",
+      "source_url": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/favicon/4c249eae-ca21-4bb7-b33e-f7e41f8e5e9f.jpg",
+      "category": "gallery"
+    },
+    {
+      "filename": "logo.png",
+      "source_url": "https://img1.wsimg.com/isteam/ip/bfd7518b-95bf-49de-83a5-1a42796015bc/logo.png",
+      "category": "logo"
+    },
+    {
+      "filename": "official-video-poster",
+      "source_url": "https://i.vimeocdn.com/video/1913847546-4f8a9b138ee5e5fc8be223bfc1ea9f24f654f2d7fec819f177735387759ebbd3-d_1920x1080?r=pad",
+      "category": "banner"
+    }
   ]
 }

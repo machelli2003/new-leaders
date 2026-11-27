@@ -34,6 +34,7 @@ def public_user(u: dict) -> dict:
     d["permissions"] = sorted(effective_permissions(u))
     d["role_label"] = ROLE_LABELS.get(u["role"], u["role"])
     d["mfa_enabled"] = bool(u.get("mfa_enabled"))
+    d["mfa_required"] = get_config().app_env == "production" and u["role"] == "super_admin"
     return d
 
 
@@ -54,24 +55,37 @@ async def _login(body: LoginIn, response: Response, super_admin: bool) -> dict:
         raise HTTPException(423, "Account temporarily locked after repeated failed attempts. Try again later.")
     if not user.get("is_active", True):
         raise HTTPException(403, "This account has been deactivated")
-    if not verify_password(body.password, user["password_hash"]):
+    async def record_failure() -> None:
         fails = user.get("failed_attempts", 0) + 1
         upd = {"failed_attempts": fails}
         if fails >= MAX_FAILS:
             upd = {"failed_attempts": 0, "locked_until": now + timedelta(minutes=LOCK_MINUTES)}
         await db.users.update_one({"_id": user["_id"]}, {"$set": upd})
         await audit(user, "auth.login_failed", "user", user["_id"])
+
+    if not verify_password(body.password, user["password_hash"]):
+        await record_failure()
         raise generic
     if user.get("mfa_enabled"):
         if not body.otp:
             raise HTTPException(401, "mfa_required")
         if not pyotp.TOTP(user["mfa_secret"]).verify(body.otp, valid_window=1):
+            await record_failure()
             raise HTTPException(401, "Invalid verification code")
     await db.users.update_one({"_id": user["_id"]}, {"$set": {"failed_attempts": 0, "locked_until": None, "last_login_at": now}})
+    if super_admin and get_config().app_env == "production" and not user.get("mfa_enabled"):
+        await audit(user, "auth.mfa_enrollment_required", "user", user["_id"])
+        return {
+            "access_token": create_access_token(user, mfa_enrollment=True),
+            "token_type": "bearer",
+            "user": public_user(user),
+            "mfa_enrollment_required": True,
+        }
     raw = await issue_refresh_token(user["_id"])
     _set_cookie(response, raw)
     await audit(user, "auth.login", "user", user["_id"])
-    return {"access_token": create_access_token(user), "token_type": "bearer", "user": public_user(user)}
+    return {"access_token": create_access_token(user), "token_type": "bearer", "user": public_user(user),
+            "mfa_enrollment_required": False}
 
 
 @router.post("/login", dependencies=[Depends(login_limiter)])
@@ -150,12 +164,21 @@ class OtpIn(BaseModel):
 
 
 @router.post("/mfa/enable")
-async def mfa_enable(body: OtpIn, user: dict = Depends(current_user)):
+async def mfa_enable(body: OtpIn, response: Response, user: dict = Depends(current_user)):
     secret = user.get("mfa_pending_secret")
     if not secret or not pyotp.TOTP(secret).verify(body.otp, valid_window=1):
         raise HTTPException(400, "Invalid verification code")
-    await get_db().users.update_one({"_id": user["_id"]}, {"$set": {"mfa_enabled": True, "mfa_secret": secret}, "$unset": {"mfa_pending_secret": ""}})
+    db = get_db()
+    updates: dict[str, object] = {"mfa_enabled": True, "mfa_secret": secret}
+    if user["role"] == "super_admin":
+        user["token_version"] = user.get("token_version", 0) + 1
+        updates["token_version"] = user["token_version"]
+        await db.refresh_tokens.delete_many({"user_id": user["_id"]})
+    await db.users.update_one({"_id": user["_id"]}, {"$set": updates, "$unset": {"mfa_pending_secret": ""}})
     await audit(user, "auth.mfa_enable", "user", user["_id"])
+    if user["role"] == "super_admin":
+        _set_cookie(response, await issue_refresh_token(user["_id"]))
+        return {"ok": True, "access_token": create_access_token(user), "user": public_user({**user, "mfa_enabled": True})}
     return {"ok": True}
 
 
@@ -167,6 +190,12 @@ async def mfa_disable(body: OtpIn, user: dict = Depends(current_user)):
         raise HTTPException(400, "Password is incorrect")
     if not pyotp.TOTP(user["mfa_secret"]).verify(body.otp, valid_window=1):
         raise HTTPException(400, "Invalid verification code")
-    await get_db().users.update_one({"_id": user["_id"]}, {"$set": {"mfa_enabled": False}, "$unset": {"mfa_secret": ""}})
+    db = get_db()
+    updates: dict[str, object] = {"mfa_enabled": False}
+    if user["role"] == "super_admin":
+        user["token_version"] = user.get("token_version", 0) + 1
+        updates["token_version"] = user["token_version"]
+        await db.refresh_tokens.delete_many({"user_id": user["_id"]})
+    await db.users.update_one({"_id": user["_id"]}, {"$set": updates, "$unset": {"mfa_secret": ""}})
     await audit(user, "auth.mfa_disable", "user", user["_id"])
     return {"ok": True}

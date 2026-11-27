@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ChevronDown, Clock, MapPin, Phone, Mail, X } from 'lucide-react'
+import { ChevronDown, Clock, MapPin, Phone, Mail, Users, X } from 'lucide-react'
 import { Img } from '@/components/Img'
 import { GallerySlideshow } from '@/components/Slideshow'
 import { Seo } from '@/components/Seo'
 import { Button } from '@/components/ui/button'
-import { Container, Heading, PageHero, Pending, Prose, RoomCard, Section } from './Parts'
-import { useGallery, useItems, useOffers, useRoom, useRooms, useSection, useSite } from './data'
+import { Container, EventVenueCard, Heading, PageHero, Pending, Prose, RoomCard, Section } from './Parts'
+import { useEventVenues, useGallery, useItems, useOffers, useRoom, useRooms, useSection, useSite } from './data'
 import { QueryState } from '@/components/ui/ui'
 import { money } from '@/lib/utils'
-import { Check, Users, BedDouble, Ruler } from 'lucide-react'
+import { Check, BedDouble, Ruler } from 'lucide-react'
 
 export function About() {
   const c = useSection('about').data?.content
@@ -22,7 +22,7 @@ export function Rooms() {
   const q = useRooms()
   return (<><Seo title="Rooms & Suites" path="/rooms" /><PageHero title="Rooms & Suites" sub="Comfortable accommodation for every stay." />
     <Section><QueryState q={q as any} empty={{ show: !q.data?.length, text: 'Rooms will appear here once published by the hotel.' }}>
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">{q.data?.map((r) => <RoomCard key={r.id} room={r} />)}</div></QueryState></Section></>)
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">{q.data?.map((r) => <RoomCard key={r.id} room={r} shuffleImages />)}</div></QueryState></Section></>)
 }
 
 export function RoomDetail() {
@@ -57,10 +57,11 @@ export function Facilities() {
 
 export function Restaurant() {
   const c = useSection('restaurant').data?.content
-  const hasDetails = Boolean(c?.opening_hours || c?.menu_highlights?.length)
+  const hasDetails = Boolean(c?.opening_hours || c?.menu_highlights?.length || c?.menu_url)
   return (<><Seo title="Restaurant & Dining" path="/restaurant" /><PageHero title={c?.title ?? 'Restaurant & Dining'} sub={c?.intro} />
     <Section>{!c ? <Pending what="Dining information" /> : <div className={hasDetails ? 'grid gap-12 lg:grid-cols-2' : ''}>{hasDetails && <div>
       {c.opening_hours && <p className="mb-6 flex items-start gap-2 text-[#38443d]"><Clock className="mt-0.5 h-5 w-5 text-gold-500" /><span className="whitespace-pre-line">{c.opening_hours}</span></p>}
+      {c.menu_url && <Button asChild variant="gold" className="mb-6"><a href={c.menu_url} target="_blank" rel="noreferrer">View restaurant menu</a></Button>}
       {!!c.menu_highlights?.length && <><h2 className="mb-4 text-3xl font-semibold text-forest-800">Menu highlights</h2><ul className="divide-y divide-sand">{c.menu_highlights.map((m: any, i: number) => <li key={i} className="flex justify-between gap-4 py-3"><div><div className="font-medium">{m.name}</div><div className="text-sm text-[#5b665f]">{m.description}</div></div>{m.price_minor ? <div className="font-semibold text-forest-800">{money(m.price_minor)}</div> : null}</li>)}</ul></>}</div>}
       <div className={`grid gap-4 sm:grid-cols-2 self-start ${hasDetails ? '' : 'lg:grid-cols-3'}`}>{(c.images?.length ? c.images : [null]).slice(0, 3).map((m: any, i: number) => <Img key={i} media={m} className="aspect-[16/10] w-full rounded-xl" label="Restaurant" />)}</div></div>}</Section></>)
 }
@@ -68,22 +69,45 @@ export function Restaurant() {
 export function Events() {
   const c = useSection('events').data?.content
   const items = useItems('event').data
+  const venues = useEventVenues()
   const site = useSite().data
-  const hasDetails = Boolean(c?.capacity_text || c?.services?.length || c?.enquiry_text || items?.length)
-  return (<><Seo title="Events & Conferences" path="/events" /><PageHero title={c?.title ?? 'Events & Conferences'} sub={c?.intro} />
-    <Section>{!c && !items?.length ? <Pending what="Event information" /> : <div className={hasDetails ? 'grid gap-12 lg:grid-cols-2' : ''}>{hasDetails && <div className="space-y-8">
-      {c?.capacity_text && <Prose text={c.capacity_text} />}
-      {!!c?.services?.length && <div className="grid gap-4 sm:grid-cols-2">{c.services.map((s: any, i: number) => <div key={i} className="rounded-xl border border-sand bg-white p-5"><h3 className="text-xl font-semibold text-forest-800">{s.title}</h3><p className="mt-1 text-sm text-[#4b5750]">{s.text}</p></div>)}</div>}
-      {c?.enquiry_text && <div className="rounded-xl bg-forest-800 p-6 text-white"><h3 className="text-2xl font-semibold">Enquire about your event</h3><p className="mt-2 whitespace-pre-line text-white/85">{c.enquiry_text}</p>{site?.profile?.phones?.[0] && <Button asChild variant="gold" className="mt-4"><a href={`tel:${site.profile.phones[0]}`}>Call {site.profile.phones[0]}</a></Button>}</div>}
-      {items?.map((e) => <article key={e.id} className="rounded-xl border border-sand bg-white p-5"><h3 className="text-xl font-semibold">{e.title}</h3><p className="mt-1 text-sm text-[#4b5750]">{e.body}</p></article>)}</div>}
-      <div className={`grid gap-4 sm:grid-cols-2 self-start ${hasDetails ? '' : 'lg:grid-cols-3'}`}>{(c?.images?.length ? c.images : [null]).slice(0, 3).map((m: any, i: number) => <Img key={i} media={m} className="aspect-[16/10] w-full rounded-xl" label="Events" />)}</div></div>}</Section></>)
+  const eventOptions = c?.services?.length ? c.services : items ?? []
+  const phones: string[] = site?.profile?.phones ?? []
+  return (<><Seo title="Events & Conferences" path="/events" />
+    <PageHero title={c?.title ?? 'Events & Conferences'} sub="Find the right space for meetings, conferences, weddings and celebrations. Check venue availability and book by the hour." />
+    <Section>
+      <Heading eyebrow="Hourly venue hire" title="Choose your venue" desc="Compare capacity, hourly rates and available hours, then select a date for your event." />
+      <QueryState q={venues as any} empty={{ show: venues.data?.length === 0, text: 'Event venues will appear here once they are published with an hourly rate.' }}>
+        {venues.data && <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">{venues.data.map((venue: any) => <EventVenueCard key={venue.id} venue={venue} />)}</div>}
+      </QueryState>
+    </Section>
+    {!!eventOptions.length && <Section tone="sand">
+      <Heading eyebrow="Occasions" title="What are you planning?" desc="Our spaces can host a range of business gatherings and celebrations." center />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{eventOptions.map((option: any, index: number) => <article key={option.id ?? option.title ?? index} className="rounded-xl border border-sand bg-white p-5">
+        <h3 className="text-xl font-semibold text-forest-800">{option.title}</h3>
+        <p className="mt-2 text-sm leading-relaxed text-[#4b5750]">{option.text ?? option.body}</p>
+      </article>)}</div>
+    </Section>}
+    <Section>
+      <div className="flex flex-col gap-5 rounded-2xl bg-forest-800 p-6 text-white sm:p-8 md:flex-row md:items-center md:justify-between">
+        <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-300">Need a hand?</p>
+          <h2 className="mt-2 text-2xl font-semibold">Let’s plan your event</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/80">Contact our team if you have questions about a venue, your event date or setup.</p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {phones[0] && <Button asChild variant="gold"><a href={`tel:${phones[0]}`}>Call {phones[0]}</a></Button>}
+          <Button asChild variant="outline"><Link to="/contact">Contact us</Link></Button>
+        </div>
+      </div>
+    </Section>
+  </>)
 }
 
 export function Gallery() {
   const q = useGallery()
   const [open, setOpen] = useState<any>(null)
   return (<><Seo title="Gallery" path="/gallery" /><PageHero title="Gallery" sub="Explore New Leaders Hotel & Events Centre." />
-    <Section><QueryState q={q as any} empty={{ show: !q.data?.length, text: 'Photographs will appear here once uploaded to the gallery.' }}>
+    <Section><QueryState q={q as any} empty={{ show: !q.data?.length, text: 'No published images are available in the Media Library.' }}>
       {!!q.data?.length && <GallerySlideshow images={q.data} onOpen={setOpen} />}
     </QueryState>
       {open && <div className="animate-fade-in fixed inset-0 z-50 grid place-items-center bg-black/90 p-4" role="dialog" aria-modal="true" onClick={() => setOpen(null)}><button className="absolute right-4 top-4 text-white" aria-label="Close"><X /></button><img src={open.variants?.lg ?? open.url} alt={open.alt} className="max-h-[90vh] max-w-full rounded" /></div>}</Section></>)
@@ -102,7 +126,11 @@ export function Contact() {
   const { data: site } = useSite()
   const c = useSection('contact').data?.content
   const p = site?.profile
-  const src = typeof c?.map_embed_url === 'string' && /^https:\/\/(www\.)?google\.[a-z.]+\/maps\/embed/.test(c.map_embed_url) ? c.map_embed_url : null
+  const customMap = typeof c?.map_embed_url === 'string' && /^https:\/\/(www\.)?google\.[a-z.]+\/maps\/embed/.test(c.map_embed_url) ? c.map_embed_url : null
+  const mapLocation = p?.latitude != null && p?.longitude != null
+    ? `${p.latitude},${p.longitude}`
+    : [p?.address, p?.town, p?.region, p?.country].filter(Boolean).join(', ')
+  const src = customMap ?? (mapLocation ? `https://maps.google.com/maps?q=${encodeURIComponent(mapLocation)}&z=16&output=embed` : null)
   return (<><Seo title="Contact" path="/contact" /><PageHero title="Contact us" sub={c?.intro} />
     <Section><div className="grid gap-10 lg:grid-cols-2"><div className="space-y-6">
       <ul className="space-y-4 text-[#38443d]">
@@ -113,6 +141,10 @@ export function Contact() {
       </ul>
       {!p?.phones?.length && !p?.emails?.length && <Pending what="Contact details" />}
       {c?.directions && <Prose text={c.directions} />}</div>
+      <div className="flex flex-wrap gap-3 lg:col-start-1">
+        {c?.directions_url && <Button asChild variant="outline"><a href={c.directions_url} target="_blank" rel="noreferrer">Get directions</a></Button>}
+        {c?.booking_url && <Button asChild variant="gold"><a href={c.booking_url} target="_blank" rel="noreferrer">Book with reception</a></Button>}
+      </div>
       <div>{src ? <iframe title="Map" src={src} className="h-96 w-full rounded-2xl border-0" loading="lazy" referrerPolicy="no-referrer-when-downgrade" /> : <div className="grid h-96 place-items-center rounded-2xl bg-sand text-sm text-[#7a847e]">Map will appear once the hotel adds it.</div>}</div></div></Section></>)
 }
 

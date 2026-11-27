@@ -43,10 +43,21 @@ def _layout(hotel: dict, title: str, lines: list[str], res: dict | None) -> str:
     rows = ""
     if res:
         cur = res.get("pricing", {}).get("currency", "GHS")
+        if res.get("booking_type") == "event":
+            event = res["event_booking"]
+            detail_rows = (
+                f"<tr><td style='padding:4px 12px 4px 0;color:#666'>Venue</td><td>{html.escape(event['venue_name'])}</td></tr>"
+                f"<tr><td style='padding:4px 12px 4px 0;color:#666'>Event time</td><td>{html.escape(event['date'])}, "
+                f"{html.escape(event['start_time'])}–{html.escape(event['end_time'])} ({event['attendees']} guests)</td></tr>"
+            )
+        else:
+            detail_rows = (
+                f"<tr><td style='padding:4px 12px 4px 0;color:#666'>Stay</td><td>{res['check_in']} → {res['check_out']} ({res['nights']} nights)</td></tr>"
+            )
         rows = (
             f"<table style='border-collapse:collapse;margin:16px 0'>"
             f"<tr><td style='padding:4px 12px 4px 0;color:#666'>Booking reference</td><td><b>{html.escape(res['reference'])}</b></td></tr>"
-            f"<tr><td style='padding:4px 12px 4px 0;color:#666'>Stay</td><td>{res['check_in']} → {res['check_out']} ({res['nights']} nights)</td></tr>"
+            f"{detail_rows}"
             f"<tr><td style='padding:4px 12px 4px 0;color:#666'>Total</td><td>{money(res.get('total_amount', 0), cur)}</td></tr>"
             f"<tr><td style='padding:4px 12px 4px 0;color:#666'>Paid</td><td>{money(res.get('amount_paid', 0), cur)}</td></tr>"
             f"<tr><td style='padding:4px 12px 4px 0;color:#666'>Balance</td><td>{money(res.get('balance', 0), cur)}</td></tr></table>"
@@ -57,7 +68,7 @@ def _layout(hotel: dict, title: str, lines: list[str], res: dict | None) -> str:
 
 
 TEMPLATES = {
-    "booking_received": ("Booking received", "We have received your booking and are holding your room. Please complete payment before the hold expires."),
+    "booking_received": ("Booking received", "We have received your booking and are holding your selected inventory. Please complete payment before the hold expires."),
     "booking_confirmation": ("Booking confirmed", "Your booking is confirmed. We look forward to welcoming you."),
     "payment_confirmation": ("Payment received", "Thank you. We have received your payment."),
     "deposit_receipt": ("Deposit received", "We have received your deposit. The outstanding balance is shown below."),
@@ -66,7 +77,7 @@ TEMPLATES = {
     "cancellation_confirmation": ("Booking cancelled", "Your booking has been cancelled."),
     "refund_notification": ("Refund update", "There is an update on your refund."),
     "checkin_reminder": ("Your stay is coming up", "A reminder of your upcoming stay with us."),
-    "booking_expired": ("Booking hold expired", "Your room hold expired because payment was not completed. You are welcome to book again."),
+    "booking_expired": ("Booking hold expired", "Your booking hold expired because payment was not completed. You are welcome to book again."),
     "cancellation_requested": ("Cancellation request received", "We received your cancellation request and will respond shortly."),
 }
 

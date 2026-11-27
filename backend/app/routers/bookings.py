@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from ..audit import audit
 from ..db import get_db
 from ..hotel_settings import get_settings
 from ..security import (booking_limiter, create_access_token, decode_token, hash_password, public_limiter, validate_password_strength,
-                        verify_password)
+                        payment_status_limiter, verify_password)
 from ..services import availability as av
 from ..services import finance
 from ..services import reservations as rs
@@ -35,7 +35,7 @@ class StayIn(BaseModel):
 
 class GuestIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
-    email: EmailStr
+    email: EmailStr | None = None
     phone: str = Field(min_length=7, max_length=30, pattern=r"^[0-9+()\-\s]+$")
     country: str = Field(default="Ghana", max_length=80)
 
@@ -47,7 +47,7 @@ class BookIn(StayIn):
 
 
 def _public_res(res: dict, rrs: list[dict] | None = None, payments: list[dict] | None = None, options: dict | None = None) -> dict:
-    d = {k: res.get(k) for k in ("reference", "status", "payment_status", "guest", "check_in", "check_out", "nights", "adults", "children",
+    d = {k: res.get(k) for k in ("reference", "booking_type", "event_booking", "status", "payment_status", "guest", "check_in", "check_out", "nights", "adults", "children",
                                   "special_requests", "total_amount", "amount_paid", "balance", "hold_expires_at", "cancellation")}
     d["pricing"] = {k: res["pricing"].get(k) for k in ("currency", "accommodation_minor", "extra_guest_minor", "discount", "taxes", "total_minor")}
     d["charges"] = res.get("charges", [])
@@ -62,9 +62,12 @@ def _public_res(res: dict, rrs: list[dict] | None = None, payments: list[dict] |
     return ser(d)
 
 
-async def _get_by_ref(db, reference: str, email: str) -> dict:
+async def _get_by_ref(db, reference: str, email: str | None = None, phone: str | None = None) -> dict:
     res = await db.reservations.find_one({"reference": reference.strip().upper()})
-    if not res or (res.get("guest") or {}).get("email", "").lower() != email.strip().lower():
+    guest = (res or {}).get("guest") or {}
+    email_matches = not email or (guest.get("email") or "").lower() == email.strip().lower()
+    phone_matches = not phone or "".join(c for c in guest.get("phone", "") if c.isdigit()) == "".join(c for c in phone if c.isdigit())
+    if not res or not email_matches or not phone_matches:
         raise HTTPException(404, "We couldn't find a booking with those details")
     return res
 
@@ -130,6 +133,8 @@ async def create_booking(body: BookIn):
     s = await get_settings(db)
     if body.pay_at_hotel and not s["payment"]["allow_pay_at_hotel"]:
         raise HTTPException(400, "Pay-at-hotel is not available. Please pay online to secure your booking.")
+    if not body.pay_at_hotel and not body.guest.email:
+        raise HTTPException(400, "An email address is required for online Paystack payment.")
     sels = [{"category_id": x.category_id, "quantity": x.quantity} for x in body.selections]
     res = await rs.create_reservation(
         db, selections=sels, check_in=body.check_in, check_out=body.check_out, adults=body.adults, children=body.children,
@@ -146,13 +151,20 @@ async def create_booking(body: BookIn):
 
 class LookupIn(BaseModel):
     reference: str = Field(min_length=6, max_length=30)
-    email: EmailStr
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, min_length=7, max_length=30, pattern=r"^[0-9+()\-\s]+$")
+
+    @model_validator(mode="after")
+    def require_contact(self):
+        if not self.email and not self.phone:
+            raise ValueError("Provide the email or phone number used when booking")
+        return self
 
 
 @router.post("/bookings/lookup", dependencies=[Depends(booking_limiter)])
 async def lookup(body: LookupIn):
     db = get_db()
-    return await _full(db, await _get_by_ref(db, body.reference, body.email))
+    return await _full(db, await _get_by_ref(db, body.reference, body.email, body.phone))
 
 
 class PayIn(LookupIn):
@@ -162,17 +174,18 @@ class PayIn(LookupIn):
 @router.post("/bookings/pay", dependencies=[Depends(booking_limiter)])
 async def pay(body: PayIn):
     db = get_db()
-    res = await _get_by_ref(db, body.reference, body.email)
+    res = await _get_by_ref(db, body.reference, body.email, body.phone)
     return await finance.init_online_payment(db, res, body.option)
 
 
-@router.get("/bookings/payment-status/{payment_reference}", dependencies=[Depends(public_limiter)])
+@router.get("/bookings/payment-status/{payment_reference}", dependencies=[Depends(payment_status_limiter)])
 async def payment_status(payment_reference: str):
     """Called by the success/failed pages. Verifies with Paystack server-side; the redirect itself proves nothing."""
     db = get_db()
     p = await finance.verify_and_apply(db, payment_reference)
     res = await db.reservations.find_one({"_id": p["reservation_id"]})
     return {"status": p["status"], "reference": res["reference"], "amount_minor": p["amount"], "currency": p["currency"],
+            "booking_type": res.get("booking_type", "room"), "event_booking": res.get("event_booking"),
             "reservation_status": res["status"], "needs_attention": res.get("needs_attention", False)}
 
 
@@ -183,7 +196,7 @@ class CancelReqIn(LookupIn):
 @router.post("/bookings/cancel-request", dependencies=[Depends(booking_limiter)])
 async def cancel_request(body: CancelReqIn):
     db = get_db()
-    res = await _get_by_ref(db, body.reference, body.email)
+    res = await _get_by_ref(db, body.reference, body.email, body.phone)
     res = await rs.request_cancellation(db, res, body.reason)
     return await _full(db, res)
 
@@ -191,7 +204,7 @@ async def cancel_request(body: CancelReqIn):
 @router.post("/bookings/cancel-preview", dependencies=[Depends(booking_limiter)])
 async def cancel_preview(body: LookupIn):
     db = get_db()
-    res = await _get_by_ref(db, body.reference, body.email)
+    res = await _get_by_ref(db, body.reference, body.email, body.phone)
     info = rs.compute_cancellation(res, await get_settings(db))
     return ser(info)
 

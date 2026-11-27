@@ -159,8 +159,11 @@ async def expire_holds(db) -> int:
             {"$set": {"status": "expired", "updated_at": now}})
         if not got:
             continue
-        await av.release_nights(db, r["_id"])
-        await db.reservation_rooms.update_many({"reservation_id": r["_id"]}, {"$set": {"status": "cancelled"}})
+        if r.get("booking_type") == "event":
+            await db.event_booking_slots.delete_many({"reservation_id": r["_id"]})
+        else:
+            await av.release_nights(db, r["_id"])
+            await db.reservation_rooms.update_many({"reservation_id": r["_id"]}, {"$set": {"status": "cancelled"}})
         res = await recompute(db, r["_id"])
         await notify_guest(db, "booking_expired", res)
         n += 1
@@ -172,7 +175,12 @@ async def expire_holds(db) -> int:
 def compute_cancellation(res: dict, settings: dict, now: datetime | None = None) -> dict:
     pol = settings["cancellation"]
     now = now or utcnow()
-    hh, mm = (int(x) for x in settings["booking"]["check_in_time"].split(":"))
+    check_time = (
+        res["event_booking"]["start_time"]
+        if res.get("booking_type") == "event"
+        else settings["booking"]["check_in_time"]
+    )
+    hh, mm = (int(x) for x in check_time.split(":"))
     ci = datetime.fromisoformat(res["check_in"]) + timedelta(hours=hh, minutes=mm)
     deadline = ci - timedelta(hours=int(pol["free_cancellation_hours"]))
     total = res["pricing"]["total_minor"]
@@ -193,8 +201,9 @@ async def request_cancellation(db, res: dict, reason: str) -> dict:
         "cancellation": {"requested_at": utcnow(), "requested_reason": reason, "preview": info, "previous_status": res["status"]}}})
     res = await db.reservations.find_one({"_id": res["_id"]})
     await audit(None, "reservation.cancellation_request", "reservation", res["_id"], note=reason)
+    admin_path = "/admin/event-bookings" if res.get("booking_type") == "event" else f"/admin/reservations/{res['_id']}"
     await notify_staff(db, "cancellation", f"Cancellation requested – {res['reference']}", reason or "",
-                       f"/admin/reservations/{res['_id']}", "reservations.manage", email=True)
+                       admin_path, "reservations.manage", email=True)
     await notify_guest(db, "cancellation_requested", res)
     return res
 
@@ -211,8 +220,11 @@ async def cancel_reservation(db, res: dict, user: dict | None, reason: str, waiv
         if refund_override_minor < 0 or refund_override_minor > res["amount_paid"]:
             raise HTTPException(400, "Refund override must be between 0 and the amount paid")
         refundable, fee = refund_override_minor, res["amount_paid"] - refund_override_minor
-    await av.release_nights(db, res["_id"])
-    await db.reservation_rooms.update_many({"reservation_id": res["_id"]}, {"$set": {"status": "cancelled"}})
+    if res.get("booking_type") == "event":
+        await db.event_booking_slots.delete_many({"reservation_id": res["_id"]})
+    else:
+        await av.release_nights(db, res["_id"])
+        await db.reservation_rooms.update_many({"reservation_id": res["_id"]}, {"$set": {"status": "cancelled"}})
     prev = res.get("cancellation") or {}
     cancellation = {**prev, "cancelled_at": utcnow(), "reason": reason, "cancelled_by": user["name"] if user else "guest",
                     "fee_minor": fee, "refundable_minor": refundable, "policy_free": info["free_cancellation"]}

@@ -1,0 +1,16 @@
+.git
+.github
+.env
+.env.*
+**/.env
+**/.env.*
+**/__pycache__
+**/*.py[cod]
+**/venv
+**/.venv
+**/node_modules
+**/dist
+backend/uploads
+scratch_*
+download_assets.py
+scrape_*.py

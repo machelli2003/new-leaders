@@ -4,6 +4,7 @@ import html
 import json
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -11,12 +12,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from . import db as database
 from .audit import request_meta
 from .config import get_config
-from .routers import auth, bookings, catalog, hotel, media, operations, pricing, reports, reservations, system, users, website
-from .security import client_ip, hash_password
+from .routers import auth, bookings, catalog, event_venues, hotel, media, operations, pricing, reports, reservations, system, users, website
+from .security import client_ip, get_rate_limit_redis, hash_password, set_rate_limit_redis
 from .utils import new_id, utcnow
 
 log = logging.getLogger("nlh")
@@ -45,20 +48,38 @@ async def lifespan(app: FastAPI):
             sentry_sdk.init(dsn=cfg.sentry_dsn, environment=cfg.app_env, traces_sample_rate=0.0, send_default_pii=False)
         except ImportError:
             log.warning("SENTRY_DSN set but sentry-sdk is not installed")
-    owns_db = database.holder.db is None
-    if owns_db:
-        await database.connect()
-    await bootstrap_super_admin(database.get_db())
+    redis_client = None
     sch = None
-    if cfg.run_scheduler:
-        from .services.jobs import start_scheduler
+    owns_db = database.holder.db is None
+    try:
+        if cfg.redis_url:
+            try:
+                redis_client = Redis.from_url(cfg.redis_url, decode_responses=True)
+                await redis_client.ping()
+            except (RedisError, ValueError) as exc:
+                log.exception("Unable to connect to the configured Redis rate-limit store")
+                raise RuntimeError("Redis rate-limit store is unavailable") from exc
+            set_rate_limit_redis(redis_client)
+        else:
+            set_rate_limit_redis(None)
+            if cfg.app_env != "test":
+                log.warning("REDIS_URL is unset; using per-process rate limits outside production")
+        if owns_db:
+            await database.connect()
+        await bootstrap_super_admin(database.get_db())
+        if cfg.run_scheduler:
+            from .services.jobs import start_scheduler
 
-        sch = start_scheduler()
-    yield
-    if sch:
-        sch.shutdown(wait=False)
-    if owns_db:
-        await database.close()
+            sch = start_scheduler()
+        yield
+    finally:
+        set_rate_limit_redis(None)
+        if sch:
+            sch.shutdown(wait=False)
+        if owns_db:
+            await database.close()
+        if redis_client:
+            await redis_client.aclose()
 
 
 def create_app() -> FastAPI:
@@ -73,12 +94,25 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def meta(request: Request, call_next):
         request_meta.set({"ip": client_ip(request), "ua": (request.headers.get("user-agent") or "")[:200]})
+        csp_nonce = secrets.token_urlsafe(18)
+        request.state.csp_nonce = csp_nonce
         resp = await call_next(request)
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        resp.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; base-uri 'self'; object-src 'none'; "
+            f"script-src 'self' 'nonce-{csp_nonce}'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https:; "
+            "connect-src 'self'; frame-src https://www.youtube-nocookie.com https://maps.google.com https://www.google.com; "
+            "form-action 'self'; frame-ancestors 'none'",
+        )
         p = request.url.path
+        if p.startswith("/api/"):
+            resp.headers.setdefault("Cache-Control", "no-store")
         if p.startswith(("/admin", "/super-admin", "/api")):
             resp.headers["X-Robots-Tag"] = "noindex, nofollow"
         if cfg.cookie_secure:
@@ -97,11 +131,26 @@ def create_app() -> FastAPI:
         errs = [{"field": ".".join(str(x) for x in e["loc"][1:]), "message": e["msg"]} for e in exc.errors()]
         return JSONResponse({"error": {"status": 422, "message": "Validation failed", "details": {"fields": errs}}}, status_code=422)
 
-    for r in (auth, users, hotel, catalog, media, website, pricing, bookings, reservations, operations, reports, system):
+    for r in (auth, users, hotel, catalog, media, website, pricing, bookings, event_venues, reservations, operations, reports, system):
         app.include_router(r.router, prefix=API)
 
     @app.get(f"{API}/health", tags=["system"])
     async def health():
+        try:
+            await database.get_db().command("ping")
+        except Exception:
+            log.exception("Readiness check failed: MongoDB is unavailable")
+            raise HTTPException(503, "Database is unavailable")
+        redis_client = get_rate_limit_redis()
+        if cfg.redis_url and redis_client is None:
+            log.error("Readiness check failed: Redis rate-limit store is not initialized")
+            raise HTTPException(503, "Rate limiting service is unavailable")
+        if cfg.redis_url:
+            try:
+                await redis_client.ping()
+            except RedisError:
+                log.exception("Readiness check failed: Redis is unavailable")
+                raise HTTPException(503, "Rate limiting service is unavailable")
         return {"status": "ok"}
 
     if cfg.storage_backend == "local":
@@ -173,7 +222,8 @@ def _mount_frontend(app: FastAPI, cfg) -> None:
                 ld = {"@context": "https://schema.org", "@type": "Hotel", "name": p["name"], "description": p["description"], "url": base,
                       "telephone": (p["phones"] or [""])[0], "email": (p["emails"] or [""])[0],
                       "address": {"@type": "PostalAddress", "streetAddress": p["address"], "addressLocality": p["town"], "addressRegion": p["region"], "addressCountry": "GH"}}
-                head += f"<script type=\"application/ld+json\">{json.dumps(ld).replace('<', '\\u003c')}</script>"
+                nonce = html.escape(getattr(request.state, "csp_nonce", ""))
+                head += f"<script nonce=\"{nonce}\" type=\"application/ld+json\">{json.dumps(ld).replace('<', '\\u003c')}</script>"
         except Exception:
             log.exception("SEO injection failed")
         page = page.replace("<!--SEO_HEAD-->", head)

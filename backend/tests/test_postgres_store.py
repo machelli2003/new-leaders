@@ -48,7 +48,7 @@ def test_json_storage_round_trips_datetimes_and_date_only_strings():
     assert decoded == value
 
 
-def test_database_url_accepts_sqlalchemy_postgresql_driver_schemes():
-    settings = Settings(database_url="postgresql+psycopg://hotel:secret@localhost:5432/hotel")
+def test_mongodb_url_is_used_for_database_connection():
+    settings = Settings(mongodb_url="mongodb+srv://hotel:secret@cluster.example.mongodb.net")
 
-    assert settings.async_database_url == "postgresql://hotel:secret@localhost:5432/hotel"
+    assert settings.async_database_url == "mongodb+srv://hotel:secret@cluster.example.mongodb.net"

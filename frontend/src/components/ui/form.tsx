@@ -17,6 +17,7 @@ export function Field({ label, error, hint, children, className }: { label: stri
     </label>
   )
 }
-export function Check({ label, ...p }: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
-  return <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" className="h-4 w-4 accent-[var(--color-forest-700)]" {...p} />{label}</label>
-}
+export const Check = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { label: string }>(({ label, ...p }, ref) => {
+  return <label className="flex items-center gap-2 text-sm cursor-pointer"><input ref={ref} type="checkbox" className="h-4 w-4 accent-[var(--color-forest-700)]" {...p} />{label}</label>
+})
+Check.displayName = 'Check'

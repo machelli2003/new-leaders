@@ -1,7 +1,13 @@
+import asyncio
 import json
+import re
 from datetime import timedelta
 
+import pytest
+from fastapi import HTTPException
+
 from app import utils
+from app.services import finance
 from .conftest import future, guest, sign, stay
 
 
@@ -27,6 +33,7 @@ async def test_full_payment_flow_confirms_only_after_verification(client, hotel,
     p = await pay(client, b["reference"])
     assert p.status_code == 200
     pref = p.json()["reference"]
+    assert re.fullmatch(r"NLHP\d{4}[0-9A-F]{32}", pref)
     assert p.json()["amount_minor"] == 100000
     # the guest lands on the success page BEFORE paying: browser redirect proves nothing
     s = (await client.get(f"/api/v1/bookings/payment-status/{pref}")).json()
@@ -84,6 +91,35 @@ async def test_invalid_reference_and_unconfigured(client, hotel, gateway):
     gateway.fail_init = True
     assert (await pay(client, b["reference"])).status_code == 502
     assert (await pay(client, b["reference"], email="wrong@example.com")).status_code == 404
+
+
+async def test_pay_at_hotel_booking_can_omit_email_and_be_found_by_phone(client, hotel, admin_h):
+    settings = await client.put(
+        "/api/v1/settings/payment",
+        headers=admin_h,
+        json={"require_full_payment": True, "deposit_enabled": False, "allow_pay_at_hotel": True},
+    )
+    assert settings.status_code == 200, settings.text
+    payload = {
+        **stay(hotel),
+        "guest": {"name": "Ama Mensah", "phone": "+233200000000", "country": "Ghana"},
+        "pay_at_hotel": True,
+    }
+    response = await client.post("/api/v1/bookings", json=payload)
+    assert response.status_code == 201, response.text
+    reference = response.json()["reference"]
+    assert response.json()["guest"]["email"] is None
+
+    found = await client.post("/api/v1/bookings/lookup", json={"reference": reference, "phone": "+233200000000"})
+    assert found.status_code == 200, found.text
+    assert found.json()["guest"]["phone"] == "+233200000000"
+    wrong_contact = await client.post("/api/v1/bookings/lookup", json={"reference": reference, "phone": "0209999999"})
+    assert wrong_contact.status_code == 404
+    online_without_email = await client.post(
+        "/api/v1/bookings",
+        json={**payload, "pay_at_hotel": False},
+    )
+    assert online_without_email.status_code == 400
 
 
 async def test_webhook_signature_required(client, hotel, gateway, db):
@@ -218,6 +254,40 @@ async def test_cancellation_policy_and_refund_flow(client, hotel, gateway, admin
     r = await db.reservations.find_one({"_id": rid})
     assert r["payment_status"] == "refunded" and r["amount_paid"] == 0
     assert (await client.post(f"/api/v1/refunds/{fid}/process", headers=admin_h, json={})).status_code == 409  # no double refund
+
+
+async def test_concurrent_refund_processing_submits_once(client, hotel, gateway, admin_h, db):
+    booking = await new_booking(client, hotel)
+    payment_reference = (await pay(client, booking["reference"])).json()["reference"]
+    gateway.pay(payment_reference)
+    await client.get(f"/api/v1/bookings/payment-status/{payment_reference}")
+    reservation = await db.reservations.find_one({"reference": booking["reference"]})
+    payment = await db.payments.find_one({"reference": payment_reference})
+    refund = (await finance.request_refund(
+        db, reservation, payment["amount"], "guest request", None, payment_id=payment["_id"],
+    ))[0]
+    actor = await db.users.find_one({"role": "hotel_admin"})
+
+    started, release = asyncio.Event(), asyncio.Event()
+    calls = 0
+
+    async def slow_refund(**kwargs):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        return {"id": 987654, "status": "pending"}
+
+    gateway.refund = slow_refund
+    first = asyncio.create_task(finance.process_refund(db, refund, actor))
+    await asyncio.wait_for(started.wait(), timeout=2)
+    with pytest.raises(HTTPException) as rejected:
+        await finance.process_refund(db, refund, actor)
+    assert rejected.value.status_code == 409
+    release.set()
+    result = await first
+    assert calls == 1
+    assert result["status"] == "processing"
 
 
 async def test_late_cancellation_fee_and_override_permission(client, hotel, admin_h, manager_h, recep_h, db):

@@ -15,6 +15,8 @@ const NAV: { to: string; label: string; icon: any; perm: string; group: string }
   { to: 'front-desk', label: 'Check-in / out', icon: DoorOpen, perm: 'checkin.manage', group: 'Front desk' },
   { to: 'guests', label: 'Guests', icon: Users, perm: 'guests.view', group: 'Front desk' },
   { to: 'rooms', label: 'Rooms & categories', icon: BedDouble, perm: 'rooms.view', group: 'Hotel' },
+  { to: 'event-venues', label: 'Event venues', icon: CalendarDays, perm: 'rooms.view', group: 'Events' },
+  { to: 'event-bookings', label: 'Event bookings', icon: ClipboardList, perm: 'reservations.view', group: 'Events' },
   { to: 'housekeeping', label: 'Housekeeping', icon: Sparkles, perm: 'housekeeping.view', group: 'Hotel' },
   { to: 'maintenance', label: 'Maintenance', icon: Wrench, perm: 'maintenance.manage', group: 'Hotel' },
   { to: 'payments', label: 'Payments', icon: CreditCard, perm: 'payments.view', group: 'Finance' },

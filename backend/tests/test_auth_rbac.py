@@ -1,4 +1,5 @@
 from .conftest import login, make_user
+from app.config import get_config
 
 
 async def test_login_and_me(client, db):
@@ -111,3 +112,66 @@ async def test_mfa_flow(client, db):
     assert r.status_code == 401 and r.json()["error"]["message"] == "mfa_required"
     r = await client.post("/api/v1/auth/super-admin/login", json={"email": "super_admin@example.com", "password": "Passw0rd!long", "otp": pyotp.TOTP(secret).now()})
     assert r.status_code == 200
+
+
+async def test_must_change_password_is_enforced_by_api(client, db):
+    await make_user(db, "hotel_admin", must_change_password=True)
+    h = await login(client, "hotel_admin@example.com")
+    blocked = await client.get("/api/v1/reservations", headers=h)
+    assert blocked.status_code == 403
+    assert blocked.json()["error"]["details"]["code"] == "password_change_required"
+
+    changed = await client.post(
+        "/api/v1/auth/change-password",
+        headers=h,
+        json={"current_password": "Passw0rd!long", "new_password": "NewPassw0rd!long"},
+    )
+    assert changed.status_code == 200
+    fresh_h = {"Authorization": f"Bearer {changed.json()['access_token']}"}
+    assert (await client.get("/api/v1/reservations", headers=fresh_h)).status_code == 200
+
+
+async def test_production_super_admin_must_enroll_mfa(client, db, monkeypatch):
+    import pyotp
+
+    class RedisStub:
+        async def eval(self, *args):
+            return [1, 0]
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+    monkeypatch.setenv("MONGODB_URL", "mongodb+srv://user:pass@cluster.example.test/db")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://hotel.example.test")
+    monkeypatch.setenv("CORS_ORIGINS", "https://hotel.example.test")
+    monkeypatch.setattr("app.security._rate_limit_redis", RedisStub())
+    get_config.cache_clear()
+    try:
+        await make_user(db, "super_admin")
+        login_response = await client.post(
+            "/api/v1/auth/super-admin/login",
+            json={"email": "super_admin@example.com", "password": "Passw0rd!long"},
+        )
+        assert login_response.status_code == 200
+        assert login_response.json()["mfa_enrollment_required"] is True
+        assert "set-cookie" not in login_response.headers
+        enroll_h = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
+        assert (await client.get("/api/v1/system/overview", headers=enroll_h)).status_code == 403
+
+        setup = await client.post("/api/v1/auth/mfa/setup", headers=enroll_h)
+        assert setup.status_code == 200
+        enable = await client.post(
+            "/api/v1/auth/mfa/enable",
+            headers=enroll_h,
+            json={"otp": pyotp.TOTP(setup.json()["secret"]).now()},
+        )
+        assert enable.status_code == 200
+        assert enable.json()["user"]["mfa_enabled"] is True
+        assert (await client.get("/api/v1/system/overview", headers=enroll_h)).status_code == 401
+        assert (await client.get(
+            "/api/v1/system/overview",
+            headers={"Authorization": f"Bearer {enable.json()['access_token']}"},
+        )).status_code == 200
+    finally:
+        get_config.cache_clear()

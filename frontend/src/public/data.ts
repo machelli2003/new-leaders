@@ -13,3 +13,4 @@ export const useRooms = (featured = false) => usePub<any[]>(`rooms-${featured}`,
 export const useRoom = (slug: string) => usePub<any>(`room-${slug}`, `/website/rooms/${slug}`)
 export const useOffers = () => usePub<any[]>('offers', '/website/offers')
 export const useGallery = () => usePub<any[]>('gallery', '/website/gallery')
+export const useEventVenues = () => usePub<any[]>('event-venues', '/event-venues')

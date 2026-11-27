@@ -5,12 +5,12 @@ import secrets
 from datetime import timedelta
 
 from fastapi import HTTPException
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from ..audit import audit
 from ..config import get_config
 from ..hotel_settings import get_settings
-from ..postgres_store import ReturnDocument
 from ..utils import new_id, today, utcnow
 from . import paystack
 from .notify import notify_guest, notify_staff
@@ -61,31 +61,69 @@ async def _receipt(db, payment_id: str) -> None:
 
 async def after_success(db, payment: dict, user: dict | None = None) -> dict:
     """Common post-processing once a payment is recorded as successful (idempotent callers only)."""
-    from .reservations import confirm_reservation  # local import: avoid cycle
-
     res = await recompute(db, payment["reservation_id"])
     was_pending = res["status"] in ("pending", "expired")  # money can arrive after a hold lapsed
     confirmed = False
     if was_pending and res["amount_paid"] >= res.get("confirm_threshold", res["total_amount"]):
-        confirmed = await confirm_reservation(db, res["_id"], user)
+        if res.get("booking_type") == "event":
+            event = res["event_booking"]
+            from ..routers.event_venues import _claim_slots, _minutes
+
+            slots = await db.event_booking_slots.find(
+                {"_id": {"$in": [
+                    f"{event['venue_id']}|{event['date']}|{minute:04d}"
+                    for minute in range(_minutes(event["start_time"]), _minutes(event["end_time"]), 15)
+                ]}}
+            ).to_list(None)
+            if len(slots) == len(range(_minutes(event["start_time"]), _minutes(event["end_time"]), 15)) and all(
+                slot["reservation_id"] == res["_id"] for slot in slots
+            ):
+                confirmed = True
+            else:
+                await db.event_booking_slots.delete_many({"reservation_id": res["_id"]})
+                confirmed = await _claim_slots(
+                    db, event["venue_id"], event["date"], _minutes(event["start_time"]), _minutes(event["end_time"]),
+                    res["_id"], None,
+                )
+            if confirmed:
+                await db.event_booking_slots.update_many(
+                    {"reservation_id": res["_id"]}, {"$set": {"hold_expires_at": None}}
+                )
+                await db.reservations.update_one(
+                    {"_id": res["_id"]},
+                    {"$set": {"status": "confirmed", "hold_expires_at": None, "updated_at": utcnow()}},
+                )
+        else:
+            from .reservations import confirm_reservation
+
+            confirmed = await confirm_reservation(db, res["_id"], user)
         res = await recompute(db, res["_id"])
         if not confirmed:
+            reason = "The event time was no longer available after payment" if res.get("booking_type") == "event" else "Rooms no longer available after payment"
             await db.reservations.update_one(
                 {"_id": res["_id"]},
-                {"$set": {"needs_attention": True, "attention_reason": "Payment received but rooms could not be re-secured. Refund or rebook."}},
+                {"$set": {"needs_attention": True, "attention_reason": "Payment received but inventory could not be re-secured. Refund or rebook."}},
             )
-            await request_refund(db, res, payment["amount"], "Rooms no longer available after payment", None, payment_id=payment["_id"])
+            await request_refund(db, res, payment["amount"], reason, None, payment_id=payment["_id"])
             await notify_staff(db, "attention", f"Action needed: payment received for lost inventory ({res['reference']})",
-                               "Customer paid but the hold had expired and rooms were taken. A refund was requested.",
-                               f"/admin/reservations/{res['_id']}", "reservations.view", email=True)
+                               f"Customer paid but the hold had expired and inventory was taken. A refund was requested.",
+                               "/admin/event-bookings" if res.get("booking_type") == "event" else f"/admin/reservations/{res['_id']}",
+                               "reservations.view", email=True)
             return await recompute(db, res["_id"])
+    admin_path = "/admin/event-bookings" if res.get("booking_type") == "event" else f"/admin/reservations/{res['_id']}"
     await notify_staff(db, "payment", f"Payment received – {res['reference']}",
                        f"{payment['amount'] / 100:,.2f} {payment['currency']} via {payment['method']}",
-                       f"/admin/reservations/{res['_id']}", "payments.view")
+                       admin_path, "payments.view")
     if confirmed:
         await notify_guest(db, "booking_confirmation", res)
-        await notify_staff(db, "reservation", f"New reservation {res['reference']}", f"{res['guest'].get('name')} · {res['check_in']} → {res['check_out']}",
-                           f"/admin/reservations/{res['_id']}", "reservations.view", email=True)
+        description = (
+            f"{res['guest'].get('name')} · {res['event_booking']['date']} · "
+            f"{res['event_booking']['start_time']}–{res['event_booking']['end_time']}"
+            if res.get("booking_type") == "event"
+            else f"{res['guest'].get('name')} · {res['check_in']} → {res['check_out']}"
+        )
+        await notify_staff(db, "reservation", f"New reservation {res['reference']}", description,
+                           admin_path, "reservations.view", email=True)
     else:
         await notify_guest(db, "deposit_receipt" if res["balance"] > 0 else "payment_confirmation", res)
     return res
@@ -110,10 +148,13 @@ async def init_online_payment(db, res: dict, option: str) -> dict:
     if res["status"] == "pending":  # give the guest time to finish paying
         new_exp = max(res["hold_expires_at"], now + timedelta(minutes=15))
         await db.reservations.update_one({"_id": res["_id"]}, {"$set": {"hold_expires_at": new_exp}})
-        await db.room_nights.update_many({"owner_id": res["_id"], "hold_expires_at": {"$ne": None}}, {"$set": {"hold_expires_at": new_exp}})
+        if res.get("booking_type") == "event":
+            await db.event_booking_slots.update_many({"reservation_id": res["_id"]}, {"$set": {"hold_expires_at": new_exp}})
+        else:
+            await db.room_nights.update_many({"owner_id": res["_id"], "hold_expires_at": {"$ne": None}}, {"$set": {"hold_expires_at": new_exp}})
     payment = {
         "_id": new_id(), "reservation_id": res["_id"], "reservation_reference": res["reference"],
-        "reference": f"NLHP{today().year}{secrets.token_hex(6).upper()}", "amount": amount,
+        "reference": f"NLHP{today().year}{secrets.token_hex(16).upper()}", "amount": amount,
         "currency": settings["booking"]["currency"], "method": "paystack", "kind": kind, "status": "pending",
         "created_at": now, "updated_at": now, "recorded_by": None,
     }
@@ -252,8 +293,17 @@ async def request_refund(db, res: dict, amount: int, reason: str, user: dict | N
 
 
 async def process_refund(db, refund: dict, user: dict, note: str = "") -> dict:
-    if refund["status"] not in ("requested", "approved"):
+    previous_status = refund["status"]
+    if previous_status not in ("requested", "approved"):
         raise HTTPException(409, f"Refund is already {refund['status']}")
+    claimed = await db.refunds.find_one_and_update(
+        {"_id": refund["_id"], "status": {"$in": ["requested", "approved"]}},
+        {"$set": {"status": "processing", "_processing_by": user["_id"], "_processing_started_at": utcnow()}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not claimed:
+        raise HTTPException(409, "Refund is already being processed")
+    refund = claimed
     res = await db.reservations.find_one({"_id": refund["reservation_id"]})
     new_status, extra = "processed", {}
     if refund["method"] == "paystack":
@@ -261,14 +311,39 @@ async def process_refund(db, refund: dict, user: dict, note: str = "") -> dict:
             data = await paystack.get_client().refund(transaction=refund["payment_reference"], amount=refund["amount"],
                                                       currency=refund["currency"], note=refund.get("reason", ""))
         except paystack.PaystackNotConfigured:
+            await db.refunds.update_one(
+                {"_id": refund["_id"], "status": "processing", "_processing_by": user["_id"]},
+                {"$set": {"status": previous_status, "_last_submission_error": "Paystack is not configured"},
+                 "$unset": {"_processing_by": "", "_processing_started_at": ""}},
+            )
             raise HTTPException(503, "Payment gateway not configured")
+        except paystack.PaystackUncertainError as e:
+            await db.refunds.update_one(
+                {"_id": refund["_id"], "status": "processing", "_processing_by": user["_id"]},
+                {"$set": {"_submission_uncertain": True, "_last_submission_error": str(e)[:200], "updated_at": utcnow()}},
+            )
+            await audit(user, "refund.submission_uncertain", "refund", refund["_id"])
+            await notify_staff(db, "attention", f"Refund submission needs review – {refund['reservation_reference']}",
+                               "Paystack's response was inconclusive. Check the Paystack dashboard before retrying.",
+                               "/admin/refunds", "refunds.view", email=True)
+            raise HTTPException(502, "Refund outcome is uncertain. Check Paystack before taking further action.")
         except paystack.PaystackError as e:
+            await db.refunds.update_one(
+                {"_id": refund["_id"], "status": "processing", "_processing_by": user["_id"]},
+                {"$set": {"status": previous_status, "_last_submission_error": str(e)[:200], "updated_at": utcnow()},
+                 "$unset": {"_processing_by": "", "_processing_started_at": ""}},
+            )
             raise HTTPException(502, f"Paystack refused the refund: {e}")
         gst = str(data.get("status", "pending")).lower()
         new_status = "processed" if gst == "processed" else "processing"
         extra = {"paystack_refund_id": str(data.get("id", "")) or None, "gateway_status": gst}
     upd = {"status": new_status, "processed_by": user["_id"], "processed_at": utcnow(), "updated_at": utcnow(), "note": note, **extra}
-    await db.refunds.update_one({"_id": refund["_id"]}, {"$set": upd})
+    result = await db.refunds.update_one(
+        {"_id": refund["_id"], "status": "processing", "_processing_by": user["_id"]},
+        {"$set": upd, "$unset": {"_processing_by": "", "_processing_started_at": "", "_submission_uncertain": "", "_last_submission_error": ""}},
+    )
+    if not result.matched_count:
+        return await db.refunds.find_one({"_id": refund["_id"]})
     await audit(user, "refund.process", "refund", refund["_id"], after={"status": new_status, "amount": refund["amount"]})
     res = await recompute(db, refund["reservation_id"])
     if new_status == "processed":
@@ -288,7 +363,11 @@ async def refund_webhook_update(db, data: dict, status: str) -> None:
         refund = await db.refunds.find_one({"payment_reference": data["transaction_reference"], **q})
     if not refund or refund["status"] in ("processed", "failed"):
         return
-    await db.refunds.update_one({"_id": refund["_id"]}, {"$set": {"status": status, "updated_at": utcnow()}})
+    await db.refunds.update_one(
+        {"_id": refund["_id"], "status": "processing"},
+        {"$set": {"status": status, "updated_at": utcnow()},
+         "$unset": {"_processing_by": "", "_processing_started_at": "", "_submission_uncertain": ""}},
+    )
     res = await recompute(db, refund["reservation_id"])
     if status == "processed":
         await notify_guest(db, "refund_notification", res, f"Refund of {refund['amount'] / 100:,.2f} {refund['currency']} has been processed.")

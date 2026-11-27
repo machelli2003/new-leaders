@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import logging
+
 from .config import get_config
+
+log = logging.getLogger("nlh.database")
 
 
 class _Holder:
@@ -22,20 +26,29 @@ def set_db(db) -> None:
 
 
 async def connect() -> None:
-    import asyncpg
-
     cfg = get_config()
-    holder.client = await asyncpg.create_pool(cfg.async_database_url, min_size=1, max_size=10, timeout=8)
-    from .postgres_store import PostgresDatabase
+    if not cfg.mongodb_url:
+        raise RuntimeError("MONGODB_URL must be set")
 
-    holder.db = PostgresDatabase(holder.client)
-    await holder.db.initialize()
-    await ensure_indexes(holder.db)
+    from motor.motor_asyncio import AsyncIOMotorClient
+
+    holder.client = AsyncIOMotorClient(cfg.mongodb_url, serverSelectionTimeoutMS=8000)
+    try:
+        await holder.client.admin.command("ping")
+        holder.db = holder.client[cfg.mongodb_database]
+        await ensure_indexes(holder.db)
+    except Exception:
+        log.exception("MongoDB connection or initialization failed for database '%s'", cfg.mongodb_database)
+        holder.client.close()
+        holder.client = None
+        holder.db = None
+        raise
+    log.info("MongoDB connected successfully (database: %s)", cfg.mongodb_database)
 
 
 async def close() -> None:
     if holder.client is not None:
-        await holder.db.close()
+        holder.client.close()
         holder.client = None
         holder.db = None
 
@@ -54,6 +67,9 @@ async def ensure_indexes(db) -> None:
     await db.reservations.create_index("guest_id")
     await db.reservation_rooms.create_index("reservation_id")
     await db.reservation_rooms.create_index("room_id")
+    await db.event_venues.create_index("slug", unique=True)
+    await db.event_booking_slots.create_index("reservation_id")
+    await db.event_booking_slots.create_index("hold_expires_at")
     # room_nights: _id is "<room_id>|<date>", unique within the room_nights collection.
     await db.room_nights.create_index("date")
     await db.room_nights.create_index("owner_id")

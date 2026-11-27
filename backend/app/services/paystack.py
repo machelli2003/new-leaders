@@ -17,6 +17,10 @@ class PaystackNotConfigured(PaystackError):
     pass
 
 
+class PaystackUncertainError(PaystackError):
+    pass
+
+
 class PaystackClient:
     def __init__(self, secret: str, base_url: str):
         self.secret, self.base = secret, base_url.rstrip("/")
@@ -27,11 +31,20 @@ class PaystackClient:
         try:
             async with httpx.AsyncClient(timeout=25) as c:
                 r = await c.request(method, f"{self.base}{path}", headers={"Authorization": f"Bearer {self.secret}"}, **kw)
+        except Exception as e:
+            raise PaystackUncertainError(f"Could not reach Paystack: {type(e).__name__}")
+        try:
             data = r.json()
-        except Exception as e:  # network / invalid JSON
-            raise PaystackError(f"Could not reach Paystack: {type(e).__name__}")
+        except Exception as e:
+            raise PaystackUncertainError(f"Paystack returned an invalid response: {type(e).__name__}")
+        if not isinstance(data, dict):
+            raise PaystackUncertainError("Paystack returned an invalid response")
+        if r.status_code >= 500:
+            raise PaystackUncertainError(f"Paystack returned server error {r.status_code}")
         if r.status_code >= 400 or not data.get("status"):
             raise PaystackError(data.get("message") or f"Paystack error {r.status_code}")
+        if not isinstance(data.get("data"), dict):
+            raise PaystackUncertainError("Paystack returned an invalid response")
         return data["data"]
 
     async def initialize(self, *, email: str, amount: int, reference: str, callback_url: str,
