@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 const PRIMARY_NAV = [['/', 'Home'], ['/rooms', 'Rooms'], ['/restaurant', 'Dining'], ['/events', 'Events'], ['/contact', 'Contact']] as const
 const DISCOVER_NAV = [['/about', 'About the hotel'], ['/facilities', 'Facilities'], ['/gallery', 'Gallery'], ['/offers', 'Special offers']] as const
 
-export function Brand({ light, centered = false }: { light?: boolean; centered?: boolean }) {
+export function Brand({ light, centered = false, showName = false }: { light?: boolean; centered?: boolean; showName?: boolean }) {
   const { data } = useSite()
   const p = data?.profile
   const centeredNameParts = p?.name?.match(/^(.*?)\s+(Hotel\b.*)$/i)
@@ -19,11 +19,39 @@ export function Brand({ light, centered = false }: { light?: boolean; centered?:
     ? [centeredNameParts[2], p?.branch_name?.replace(/\s+Branch$/i, '')].filter(Boolean).join(' · ')
     : p?.branch_name
   return (
-    <Link to="/" className={cn('flex items-center gap-3', centered && 'absolute left-1/2 top-1/2 z-0 w-max max-w-[42vw] -translate-x-1/2 -translate-y-1/2 flex-col justify-center gap-0 text-center sm:max-w-[280px]')} aria-label={`${p?.name ?? 'New Leaders Hotel'} home`}>
-      {!centered && (p?.logo_image ? <Img media={p.logo_image} eager className="h-10 w-auto max-w-[120px] object-contain" /> :
-        <span className="grid h-10 w-10 place-items-center rounded-full bg-forest-800 font-serif text-lg text-gold-400">NL</span>)}
-      <span className={cn('font-serif font-semibold leading-tight', centered ? 'text-[14px] uppercase tracking-[0.08em] sm:text-xl' : 'text-xl', light ? 'text-white' : 'text-forest-800')}>{brandName}
-        {branchName && <span className={cn('block truncate font-sans font-medium uppercase', centered ? 'w-full text-[7px] tracking-[0.12em] sm:text-[9px]' : 'text-[10px] tracking-[0.18em]', light ? 'text-gold-300' : 'text-gold-500')}>{branchName}</span>}</span>
+    <Link to="/" className={cn('flex items-center gap-3', centered && 'absolute left-1/2 top-1/2 z-0 w-max max-w-[32vw] -translate-x-1/2 -translate-y-1/2 flex-col justify-center gap-0 text-center sm:max-w-[280px]')} aria-label={`${p?.name ?? 'New Leaders Hotel'} home`}>
+      {centered ? (
+        <>
+          {!showName && p?.logo_image ? (
+            <Img
+              media={p.logo_image}
+              eager
+              className={cn(
+                'h-14 w-auto max-w-[260px] object-contain drop-shadow-[0_2px_3px_rgba(0,0,0,0.55)] sm:h-16 sm:max-w-[300px]',
+                light && 'drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
+              )}
+            />
+          ) : !showName ? (
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-forest-800 font-serif text-lg text-gold-400">NL</span>
+          ) : null}
+          {showName && (
+            <div className="flex flex-col items-center justify-center leading-tight">
+              <span className={cn('max-w-full break-words font-serif text-[12px] font-semibold italic sm:hidden', light ? 'text-white' : 'text-forest-800')}>{brandName}</span>
+              <span className={cn('hidden max-w-full break-words font-serif text-[16px] font-semibold italic sm:block sm:text-[20px]', light ? 'text-white' : 'text-forest-800')}>{p?.name ?? brandName}</span>
+              {p?.branch_name && (
+                <span className={cn('mt-1 hidden font-sans text-[8px] font-semibold uppercase tracking-[0.14em] sm:block sm:text-[10px]', light ? 'text-gold-300' : 'text-gold-500')}>{p.branch_name}</span>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {p?.logo_image ? <Img media={p.logo_image} eager className="h-10 w-auto max-w-[120px] object-contain" /> :
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-forest-800 font-serif text-lg text-gold-400">NL</span>}
+          <span className={cn('text-xl font-serif font-semibold leading-tight', light ? 'text-white' : 'text-forest-800')}>{brandName}
+            {branchName && <span className={cn('block truncate font-sans text-[10px] font-medium uppercase tracking-[0.18em]', light ? 'text-gold-300' : 'text-gold-500')}>{branchName}</span>}</span>
+        </>
+      )}
     </Link>
   )
 }
@@ -78,12 +106,12 @@ export function PublicLayout() {
           ? cn('fixed inset-x-0 top-0', homeOverlay ? 'bg-transparent shadow-none' : 'bg-ivory/95 shadow-md backdrop-blur-xl')
           : 'sticky top-0 bg-ivory/95 shadow-sm backdrop-blur-xl',
       )}>
-        <div className="relative mx-auto flex h-16 w-full items-center justify-between px-4 sm:h-20 sm:px-7 lg:px-9">
+        <div className="relative mx-auto flex h-20 w-full items-center justify-between px-4 sm:h-24 sm:px-7 lg:px-9">
           <button type="button" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} aria-controls={open ? 'site-menu' : undefined} onClick={() => setOpen((value) => !value)} className={cn('relative z-10 inline-flex w-fit items-center gap-2 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors', homeOverlay ? 'text-white hover:text-gold-300' : 'text-forest-800 hover:text-gold-600')}>
             {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
             <span>{open ? 'Close' : 'Menu'}</span>
           </button>
-          <Brand centered light={homeOverlay} />
+          <Brand centered light={homeOverlay} showName={!isHome || !homeOverlay} />
           <div className={cn('relative z-10 flex min-w-0 items-center justify-end gap-2 sm:gap-4 lg:gap-6', homeOverlay ? 'text-white' : 'text-forest-800')}>
             <Link to="/contact" className="hidden text-xs font-medium uppercase tracking-[0.08em] transition-colors hover:text-gold-300 md:inline-flex lg:text-sm">Contact us</Link>
             <span aria-hidden="true" className={cn('hidden h-5 w-px lg:block', homeOverlay ? 'bg-white/50' : 'bg-forest-800/35')} />

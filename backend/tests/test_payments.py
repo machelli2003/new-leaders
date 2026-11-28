@@ -215,16 +215,41 @@ async def test_payment_after_hold_expiry_reclaims_or_flags(client, hotel, gatewa
 async def test_offline_payments_and_receipts(client, hotel, recep_h, manager_h):
     r = (await client.post("/api/v1/reservations", headers=recep_h, json={**stay(hotel), "guest": {"name": "Walk In", "phone": "0201112222"}})).json()
     rid = r["reservation"]["id"]
-    p = await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 40000, "method": "cash"})
+    p = await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 40000, "method": "cash", "idempotency_key": "payments-test-offline-0001"})
     assert p.status_code == 201 and p.json()["receipt_number"].startswith("RCT-")
-    assert (await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 999999, "method": "cash"})).status_code == 400
-    assert (await client.post("/api/v1/payments/offline", headers=manager_h, json={"reservation_id": rid, "amount_minor": 100, "method": "cash"})).status_code == 403
-    p2 = await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 60000, "method": "mobile_money"})
+    retry = await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 40000, "method": "cash", "idempotency_key": "payments-test-offline-0001"})
+    assert retry.status_code == 201 and retry.json()["id"] == p.json()["id"]
+    assert (await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 999999, "method": "cash", "idempotency_key": "payments-test-offline-0002"})).status_code == 400
+    assert (await client.post("/api/v1/payments/offline", headers=manager_h, json={"reservation_id": rid, "amount_minor": 100, "method": "cash", "idempotency_key": "payments-test-offline-0003"})).status_code == 403
+    p2 = await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 60000, "method": "mobile_money", "idempotency_key": "payments-test-offline-0004"})
     d = (await client.get(f"/api/v1/reservations/{rid}", headers=recep_h)).json()
     assert d["reservation"]["payment_status"] == "paid" and d["reservation"]["balance"] == 0 and len(d["payments"]) == 2
 
 
-async def test_cancellation_policy_and_refund_flow(client, hotel, gateway, admin_h, manager_h, db):
+async def test_concurrent_offline_payments_cannot_overpay(client, hotel, recep_h, db):
+    reservation = (await client.post(
+        "/api/v1/reservations",
+        headers=recep_h,
+        json={**stay(hotel), "guest": {"name": "Concurrency Guest", "phone": "0201112222"}},
+    )).json()["reservation"]
+    bodies = [
+        {"reservation_id": reservation["id"], "amount_minor": 60000, "method": "cash", "idempotency_key": f"offline-race-key-{i:04d}"}
+        for i in range(2)
+    ]
+    responses = await asyncio.gather(*[
+        client.post("/api/v1/payments/offline", headers=recep_h, json=body)
+        for body in bodies
+    ])
+
+    assert sorted(response.status_code for response in responses) == [201, 400]
+    saved = await db.reservations.find_one({"_id": reservation["id"]})
+    payments = await db.payments.find({"reservation_id": reservation["id"], "status": "success"}).to_list(None)
+    assert saved["amount_paid"] == 60000
+    assert saved["balance"] == 40000
+    assert sum(payment["amount"] for payment in payments) == 60000
+
+
+async def test_cancellation_policy_and_refund_flow(client, hotel, gateway, admin_h, manager_h, super_h, db):
     await client.put("/api/v1/settings/cancellation", headers=admin_h, json={"free_cancellation_hours": 48, "late_fee_percent": 50, "non_refundable": False})
     # booking far in the future -> free cancellation -> full refund requested (never automatic)
     b = await new_booking(client, hotel, d_in=20, d_out=22)
@@ -243,20 +268,44 @@ async def test_cancellation_policy_and_refund_flow(client, hotel, gateway, admin
     refunds = (await client.get("/api/v1/refunds", headers=admin_h)).json()["items"]
     assert len(refunds) == 1 and refunds[0]["amount"] == 100000 and refunds[0]["status"] == "requested"
     assert (await db.reservations.find_one({"_id": rid}))["payment_status"] == "refund_pending"
-    # manager cannot approve/process refunds; admin can
+    # The requester cannot approve, and approver and processor must be distinct.
     fid = refunds[0]["id"]
     assert (await client.post(f"/api/v1/refunds/{fid}/process", headers=manager_h, json={})).status_code == 403
-    pr = await client.post(f"/api/v1/refunds/{fid}/process", headers=admin_h, json={})
+    assert (await client.post(f"/api/v1/refunds/{fid}/approve", headers=manager_h, json={})).status_code == 403
+    approved = await client.post(f"/api/v1/refunds/{fid}/approve", headers=admin_h, json={})
+    assert approved.status_code == 200 and approved.json()["approved_by"]
+    assert (await client.post(f"/api/v1/refunds/{fid}/process", headers=admin_h, json={})).status_code == 403
+    pr = await client.post(f"/api/v1/refunds/{fid}/process", headers=super_h, json={})
     assert pr.status_code == 200 and pr.json()["status"] == "processing"
     assert gateway.refunds == [{"transaction": pref, "amount": 100000}]
     # Paystack confirms via webhook -> processed -> refunded
     await webhook(client, {"event": "refund.processed", "data": {"id": 987654, "transaction_reference": pref}})
     r = await db.reservations.find_one({"_id": rid})
     assert r["payment_status"] == "refunded" and r["amount_paid"] == 0
-    assert (await client.post(f"/api/v1/refunds/{fid}/process", headers=admin_h, json={})).status_code == 409  # no double refund
+    assert (await client.post(f"/api/v1/refunds/{fid}/process", headers=super_h, json={})).status_code == 409  # no double refund
 
 
-async def test_concurrent_refund_processing_submits_once(client, hotel, gateway, admin_h, db):
+async def test_refund_requester_cannot_approve_or_process(client, hotel, gateway, admin_h, super_h, db):
+    booking = await new_booking(client, hotel)
+    payment_reference = (await pay(client, booking["reference"])).json()["reference"]
+    gateway.pay(payment_reference)
+    await client.get(f"/api/v1/bookings/payment-status/{payment_reference}")
+    reservation = await db.reservations.find_one({"reference": booking["reference"]})
+    requested = await client.post(
+        "/api/v1/refunds",
+        headers=admin_h,
+        json={"reservation_id": reservation["_id"], "amount_minor": 100000, "reason": "Guest refund request"},
+    )
+    assert requested.status_code == 201
+    refund_id = requested.json()[0]["id"]
+
+    assert (await client.post(f"/api/v1/refunds/{refund_id}/approve", headers=admin_h, json={})).status_code == 403
+    approved = await client.post(f"/api/v1/refunds/{refund_id}/approve", headers=super_h, json={})
+    assert approved.status_code == 200
+    assert (await client.post(f"/api/v1/refunds/{refund_id}/process", headers=super_h, json={})).status_code == 403
+
+
+async def test_concurrent_refund_processing_submits_once(client, hotel, gateway, admin_h, super_h, db):
     booking = await new_booking(client, hotel)
     payment_reference = (await pay(client, booking["reference"])).json()["reference"]
     gateway.pay(payment_reference)
@@ -266,7 +315,14 @@ async def test_concurrent_refund_processing_submits_once(client, hotel, gateway,
     refund = (await finance.request_refund(
         db, reservation, payment["amount"], "guest request", None, payment_id=payment["_id"],
     ))[0]
-    actor = await db.users.find_one({"role": "hotel_admin"})
+    approver = await db.users.find_one({"role": "hotel_admin"})
+    actor = await db.users.find_one({"role": "super_admin"})
+    await db.refunds.update_one(
+        {"_id": refund["_id"]},
+        {"$set": {"status": "approved", "approved_by": approver["_id"]}},
+    )
+    refund["status"] = "approved"
+    refund["approved_by"] = approver["_id"]
 
     started, release = asyncio.Event(), asyncio.Event()
     calls = 0
@@ -294,7 +350,7 @@ async def test_late_cancellation_fee_and_override_permission(client, hotel, admi
     await client.put("/api/v1/settings/cancellation", headers=admin_h, json={"free_cancellation_hours": 48, "late_fee_percent": 50, "non_refundable": False})
     r = (await client.post("/api/v1/reservations", headers=recep_h, json={**stay(hotel, d_in=1, d_out=3), "guest": {"name": "Late Guest", "phone": "0201112299"}})).json()
     rid = r["reservation"]["id"]
-    await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 100000, "method": "cash"})
+    await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 100000, "method": "cash", "idempotency_key": "payments-test-offline-0005"})
     assert (await client.post(f"/api/v1/reservations/{rid}/cancel", headers=manager_h, json={"waive_fee": True})).status_code == 403
     c = await client.post(f"/api/v1/reservations/{rid}/cancel", headers=manager_h, json={"reason": "late"})
     cancel = c.json()["cancellation"]
@@ -305,6 +361,6 @@ async def test_late_cancellation_fee_and_override_permission(client, hotel, admi
 async def test_refund_cannot_exceed_paid(client, hotel, admin_h, recep_h):
     r = (await client.post("/api/v1/reservations", headers=recep_h, json={**stay(hotel), "guest": {"name": "Over Refund", "phone": "0201112288"}})).json()
     rid = r["reservation"]["id"]
-    await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 10000, "method": "cash"})
+    await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 10000, "method": "cash", "idempotency_key": "payments-test-offline-0006"})
     assert (await client.post("/api/v1/refunds", headers=admin_h, json={"reservation_id": rid, "amount_minor": 20000, "reason": "too much"})).status_code == 400
     assert (await client.post("/api/v1/refunds", headers=admin_h, json={"reservation_id": rid, "amount_minor": 10000, "reason": "okay"})).status_code == 201

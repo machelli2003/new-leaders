@@ -12,6 +12,7 @@ from ..db import get_db
 from ..security import require
 from ..services import storage
 from ..utils import extract_media_ids, new_id, paginate, ser, utcnow
+from .common import literal_search_regex
 
 router = APIRouter(prefix="/media", tags=["media"])
 Category = Literal["logo", "banner", "room", "facility", "restaurant", "event", "gallery", "promotion", "other"]
@@ -58,8 +59,8 @@ async def list_media(q: str | None = None, category: str | None = None, status: 
     if status:
         query["status"] = status
     if q:
-        query["$or"] = [{"title": {"$regex": q, "$options": "i"}}, {"description": {"$regex": q, "$options": "i"}},
-                        {"alt_text": {"$regex": q, "$options": "i"}}]
+        query["$or"] = [{"title": literal_search_regex(q)}, {"description": literal_search_regex(q)},
+                        {"alt_text": literal_search_regex(q)}]
     return await paginate(get_db().media, query, [("order", 1), ("created_at", -1)], page, page_size)
 
 

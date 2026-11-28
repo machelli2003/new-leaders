@@ -3,25 +3,28 @@
 ## Environment variables (see `.env.example`)
 | Variable | Notes |
 |---|---|
-| `APP_ENV` | `production` enforces strong `JWT_SECRET` and secure cookies |
+| `APP_ENV` | Required: `development`, `test`, or `production`; no default |
 | `MONGODB_URL` | MongoDB Atlas connection string (`mongodb+srv://...`) or local MongoDB URI |
 | `MONGODB_DATABASE` | MongoDB database name (default `new_leaders_hotel`) |
-| `JWT_SECRET` | 32+ random chars (`python -c "import secrets;print(secrets.token_urlsafe(48))"`) |
+| `JWT_SECRET` | Required in every environment; use 32+ random chars (`python -c "import secrets;print(secrets.token_urlsafe(48))"`) |
 | `REDIS_URL` | Shared rate-limit store (`redis://` or `rediss://`); required in production |
 | `COOKIE_SECURE` | `true` behind HTTPS |
 | `CORS_ORIGINS`, `PUBLIC_BASE_URL` | Your site origin(s) |
 | `PAYSTACK_SECRET_KEY` | Backend only. `sk_test_…` first, then live |
-| `RESEND_API_KEY`, `EMAIL_FROM` | Optional; without them emails are logged as skipped |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Optional for notifications; required to deliver guest-account password reset links |
 | `STORAGE_BACKEND` | `local` (needs a persistent volume) or `s3` (+ `S3_*`) |
 | `RUN_SCHEDULER` | `true` on exactly one instance |
 | `SERVE_FRONTEND` | `true` to serve the built SPA (with SEO tags) from the API |
 | `SUPER_ADMIN_EMAIL/PASSWORD` | First boot only, then remove |
 
 Never commit `.env`. Paystack and database credentials never go in the frontend.
+Set both required configuration values explicitly before startup. Install pinned production packages with `pip install --require-hashes -r backend/requirements.txt`; do not install from the unpinned input constraints in `backend/requirements.in`. Regenerate the lock from reviewed constraints using the `pip-compile --allow-unsafe --generate-hashes` commands in the README.
 
 `.env.example` contains development placeholders only. Production startup rejects a local MongoDB URL, non-HTTPS public URL/CORS origins, weak JWT secrets, insecure cookies, or incomplete S3 configuration. Supply production values through the hosting platform's secret manager instead of copying the development template unchanged. A production Super Admin must complete authenticator enrollment before using privileged APIs.
 
 Rate limits use a Redis-backed sliding window shared across app workers and replicas. Docker Compose starts a private Redis service with no published port and defaults `REDIS_URL` to it; set `REDIS_URL` in the deployment environment to use a managed Redis-compatible service instead. Redis is required in production: an unavailable rate-limit store causes startup to fail or requests to return `503`, never a silent in-memory bypass. The Compose Redis instance is intentionally ephemeral; its counters reset on restart.
+
+Guest-account password reset links are single-use and expire after 10 minutes. Configure `RESEND_API_KEY`, `EMAIL_FROM`, and the HTTPS `PUBLIC_BASE_URL` so guests can receive reset links.
 
 ## Paystack
 1. Dashboard → Settings → API: copy the **secret** key into `PAYSTACK_SECRET_KEY` on the server.
@@ -31,7 +34,7 @@ Rate limits use a Redis-backed sliding window shared across app workers and repl
 
 ## Run
 - Docker: set `MONGODB_URL` and production settings in `.env`, then `docker compose up --build`. Compose starts Redis on its private network; do not publish its port.
-- Manual: `npm run build` in `frontend`, then `SERVE_FRONTEND=true uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers` behind Nginx/Caddy with HTTPS. Set `X-Forwarded-*` and `TRUST_PROXY=true`.
+- Manual: `npm run build` in `frontend`, then `SERVE_FRONTEND=true uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-proxy-headers` behind Nginx/Caddy with HTTPS. Set `X-Forwarded-*`, `TRUST_PROXY=true`, and `TRUSTED_PROXY_CIDRS` to the proxy's exact IP/CIDR (for example `127.0.0.1/32`). Forwarded headers are interpreted by the application only after checking the socket peer; do not expose the application port directly or include untrusted clients in `TRUSTED_PROXY_CIDRS`.
 - MongoDB Atlas: create a database user and cluster, allow the server IP address, and copy the `mongodb+srv://` connection string into `MONGODB_URL`.
 
 ## Backups & recovery

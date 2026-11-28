@@ -1,3 +1,4 @@
+import asyncio
 import io
 
 from PIL import Image
@@ -29,7 +30,7 @@ async def test_check_in_out_flow(client, hotel, recep_h, manager_h, db):
     # outstanding balance blocks check-out; receptionist cannot waive it
     assert (await client.post(f"/api/v1/check-out/{rid}", headers=recep_h, json={})).status_code == 402
     assert (await client.post(f"/api/v1/check-out/{rid}", headers=recep_h, json={"allow_outstanding": True, "reason": "x"})).status_code == 403
-    await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 100000, "method": "cash"})
+    await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 100000, "method": "cash", "idempotency_key": "ops-test-payment-0001"})
     co = await client.post(f"/api/v1/check-out/{rid}", headers=recep_h, json={})
     assert co.status_code == 200 and co.json()["status"] == "checked_out" and co.json()["final_receipt"]["number"].startswith("FIN-")
     room = await db.rooms.find_one({"_id": room["_id"]})
@@ -53,7 +54,7 @@ async def test_check_in_rules(client, hotel, recep_h, manager_h, admin_h, db):
     rid = await walkin(client, hotel, recep_h, name="Needs Payment")
     assert (await client.post(f"/api/v1/check-in/{rid}", headers=recep_h, json={"id_verified": True})).status_code == 402
     # dirty room blocks check-in until housekeeping is done
-    await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 100000, "method": "cash"})
+    await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 100000, "method": "cash", "idempotency_key": "ops-test-payment-0002"})
     room_id = (await db.reservation_rooms.find_one({"reservation_id": rid}))["room_id"]
     await client.patch(f"/api/v1/housekeeping/rooms/{room_id}", headers=manager_h, json={"status": "dirty"})
     assert (await client.post(f"/api/v1/check-in/{rid}", headers=recep_h, json={"id_verified": True})).status_code == 409
@@ -198,7 +199,7 @@ async def test_audit_trail(client, admin_h, super_h, hotel, db):
 
 async def test_reports_and_exports(client, hotel, admin_h, manager_h, recep_h):
     rid = await walkin(client, hotel, recep_h)
-    await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 70000, "method": "cash"})
+    await client.post("/api/v1/payments/offline", headers=recep_h, json={"reservation_id": rid, "amount_minor": 70000, "method": "cash", "idempotency_key": "ops-test-payment-0003"})
     rev = (await client.get("/api/v1/reports/revenue", headers=admin_h)).json()
     assert rev["totals"]["payments_minor"] == 70000 and rev["totals"]["net_minor"] == 70000
     weekly = (await client.get("/api/v1/reports/revenue?period=monthly", headers=admin_h)).json()
@@ -217,6 +218,9 @@ async def test_reports_and_exports(client, hotel, admin_h, manager_h, recep_h):
     assert "total_revenue_minor" not in dash and dash["todays_check_ins"] == 1
     dash = (await client.get("/api/v1/reports/dashboard", headers=admin_h)).json()
     assert dash["total_revenue_minor"] == 70000 and dash["outstanding_balances_minor"] == 30000
+    assert dash["today"] == future(0)
+    assert any(item["id"] == rid for item in dash["today_arrivals"])
+    assert any(item["id"] == rid and item["balance_minor"] == 30000 for item in dash["overdue_balances"])
 
 
 async def test_calendar_and_notifications_and_guests(client, hotel, recep_h, manager_h, admin_h):
@@ -236,16 +240,52 @@ async def test_calendar_and_notifications_and_guests(client, hotel, recep_h, man
     assert (await client.post("/api/v1/notifications/read-all", headers=manager_h)).status_code == 200
 
 
-async def test_guest_account_optional(client, hotel):
+async def test_guest_account_optional(client, hotel, db):
     b = await client.post("/api/v1/bookings", json={**stay(hotel), "guest": guest("acct@example.com")})
     assert b.status_code == 201  # guests never need an account
     reg = await client.post("/api/v1/bookings/account/register", json={**guest("acct@example.com"), "password": "Guest-pass-123"})
+    assert reg.status_code == 202
+    verification = await db.account_verifications.find_one({"email": "acct@example.com"})
+    assert verification is not None
+    guest_record = await db.guests.find_one({"email": "acct@example.com"})
+    assert guest_record.get("password_hash") is None
+    verification_code = "123456"
+    from app.security import hash_verification_code
+    await db.account_verifications.update_one(
+        {"_id": verification["_id"]},
+        {"$set": {"code_hash": hash_verification_code("acct@example.com", verification_code)}},
+    )
+    reg = await client.post(
+        "/api/v1/bookings/account/register/verify",
+        json={**guest("acct@example.com"), "password": "Guest-pass-123", "code": verification_code},
+    )
     assert reg.status_code == 201
     mine = await client.get("/api/v1/bookings/account/bookings", headers={"Authorization": f"Bearer {reg.json()['access_token']}"})
     assert mine.status_code == 200 and len(mine.json()["bookings"]) == 1
     # a guest token is not a staff token
     assert (await client.get("/api/v1/reservations", headers={"Authorization": f"Bearer {reg.json()['access_token']}"})).status_code == 401
     assert (await client.post("/api/v1/bookings/account/login", json={"email": "acct@example.com", "password": "bad"})).status_code == 401
+
+
+async def test_guest_registration_verification_attempts_are_capped(client, db):
+    registration = {**guest("guess@example.com"), "password": "Guest-pass-123"}
+    assert (await client.post("/api/v1/bookings/account/register", json=registration)).status_code == 202
+    assert (await client.post("/api/v1/bookings/account/register", json=registration)).status_code == 429
+
+    from app.security import hash_verification_code
+    await db.account_verifications.update_one(
+        {"email": "guess@example.com"},
+        {"$set": {"code_hash": hash_verification_code("guess@example.com", "123456")}},
+    )
+    verification = {**registration, "code": "000000"}
+    responses = await asyncio.gather(*[
+        client.post("/api/v1/bookings/account/register/verify", json=verification)
+        for _ in range(8)
+    ])
+    assert [response.status_code for response in responses].count(400) == 5
+    assert [response.status_code for response in responses].count(429) == 3
+    record = await db.account_verifications.find_one({"email": "guess@example.com"})
+    assert record["attempts"] == 5
 
 
 async def test_seo_endpoints(client, hotel):

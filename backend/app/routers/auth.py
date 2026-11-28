@@ -49,11 +49,14 @@ async def _login(body: LoginIn, response: Response, super_admin: bool) -> dict:
     user = await db.users.find_one({"email": body.email.lower()})
     generic = HTTPException(401, "Invalid email or password")
     if not user or (user["role"] == "super_admin") != super_admin:
+        await audit(None, "auth.login_failed", "user", None, note="invalid_credentials")
         raise generic
     now = utcnow()
     if user.get("locked_until") and user["locked_until"] > now:
+        await audit(user, "auth.login_blocked", "user", user["_id"], note="account_locked")
         raise HTTPException(423, "Account temporarily locked after repeated failed attempts. Try again later.")
     if not user.get("is_active", True):
+        await audit(user, "auth.login_blocked", "user", user["_id"], note="account_inactive")
         raise HTTPException(403, "This account has been deactivated")
     async def record_failure() -> None:
         fails = user.get("failed_attempts", 0) + 1

@@ -251,8 +251,37 @@ async def dashboard(start: str | None = None, end: str | None = None, user: dict
     active_rooms = [r for r in rooms if r.get("operational_status") == "active"]
     occupied = counts.get("occupied", 0)
     all_res = await db.reservations.find({}).to_list(None)
-    upcoming = sorted([r for r in all_res if r["status"] == "confirmed" and r["check_in"] >= t], key=lambda r: r["check_in"])[:8]
+    room_reservations = [r for r in all_res if r.get("booking_type", "room") != "event"]
+    upcoming = sorted([r for r in room_reservations if r["status"] == "confirmed" and r["check_in"] >= t], key=lambda r: r["check_in"])[:8]
+    today_arrivals = sorted(
+        [r for r in room_reservations if r["check_in"] == t and r["status"] in ("confirmed", "pending", "checked_in")],
+        key=lambda r: r.get("created_at"),
+    )
+    today_departures = sorted(
+        [r for r in room_reservations if r["check_out"] == t and r["status"] in ("checked_in", "checked_out")],
+        key=lambda r: r.get("check_out"),
+    )
+
+    def operation_item(r: dict) -> dict:
+        return {"id": r["_id"], "reference": r["reference"], "guest": r["guest"].get("name"),
+                "check_in": r["check_in"], "check_out": r["check_out"], "status": r["status"], "rooms": r["rooms_count"]}
+
+    rooms_not_ready = []
+    for room in rooms:
+        if room.get("archived"):
+            continue
+        housekeeping_status = room.get("housekeeping_status", "ready")
+        operational_status = room.get("operational_status", "active")
+        if operational_status != "active" or (
+            housekeeping_status != "ready" and room.get("occupancy_status") != "occupied"
+        ):
+            rooms_not_ready.append({
+                "id": room["_id"], "number": room["number"],
+                "status": operational_status if operational_status != "active" else housekeeping_status,
+            })
+
     data = {
+        "today": t,
         "total_reservations": len(all_res),
         "todays_check_ins": sum(1 for r in all_res if r["check_in"] == t and r["status"] in ("confirmed", "checked_in")),
         "todays_check_outs": sum(1 for r in all_res if r["check_out"] == t and r["status"] in ("checked_in", "checked_out")),
@@ -263,9 +292,32 @@ async def dashboard(start: str | None = None, end: str | None = None, user: dict
         "rooms_maintenance": counts.get("maintenance", 0) + counts.get("out_of_service", 0),
         "occupancy_percent": round(100 * occupied / len(active_rooms), 1) if active_rooms else 0,
         "upcoming": [{"id": r["_id"], "reference": r["reference"], "guest": r["guest"].get("name"), "check_in": r["check_in"], "check_out": r["check_out"], "rooms": r["rooms_count"]} for r in upcoming],
+        "today_arrivals": [operation_item(r) for r in today_arrivals],
+        "today_departures": [operation_item(r) for r in today_departures],
         "reservation_trend": [],
         "occupancy_trend": await _occupancy_rows(db, s, e),
     }
+    if "housekeeping.view" in user["_perms"]:
+        data["rooms_not_ready"] = sorted(rooms_not_ready, key=lambda room: room["number"])
+    if "payments.view" in user["_perms"]:
+        overdue_balances = sorted(
+            [r for r in room_reservations if r["check_in"] <= t
+             and r["status"] in ("confirmed", "checked_in", "checked_out") and r.get("balance", 0) > 0],
+            key=lambda r: (r["check_in"], r["reference"]),
+        )
+        data["overdue_balance_count"] = len(overdue_balances)
+        data["overdue_balances"] = [
+            {**operation_item(r), "balance_minor": r["balance"]} for r in overdue_balances[:8]
+        ]
+    if "maintenance.manage" in user["_perms"]:
+        maintenance_filter = {"status": {"$in": ["open", "in_progress"]}}
+        data["open_maintenance_count"] = await db.maintenance_requests.count_documents(maintenance_filter)
+        maintenance = await db.maintenance_requests.find(maintenance_filter).sort([("created_at", -1)]).to_list(8)
+        data["open_maintenance"] = [
+            {"id": item["_id"], "title": item["title"], "priority": item["priority"],
+             "status": item["status"], "room_numbers": item.get("room_numbers", [])}
+            for item in maintenance
+        ]
     created: dict[str, int] = {}
     for r in all_res:
         d = _d(r["created_at"])

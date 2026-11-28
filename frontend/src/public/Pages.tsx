@@ -12,9 +12,10 @@ import { money } from '@/lib/utils'
 import { Check, BedDouble, Ruler } from 'lucide-react'
 
 export function About() {
-  const c = useSection('about').data?.content
+  const section = useSection('about')
+  const c = section.data?.content
   return (<><Seo title="About" path="/about" /><PageHero title={c?.title ?? 'About the hotel'} />
-    <Section><div className="grid gap-12 lg:grid-cols-2">{c?.body ? <Prose text={c.body} /> : <Pending what="The hotel story" />}<Img media={c?.image} className="aspect-[4/3] w-full rounded-2xl" label="About" /></div>
+    <Section><div className="grid gap-12 lg:grid-cols-2">{c?.body ? <Prose text={c.body} /> : section.isLoading ? null : section.isError ? <p role="alert" className="text-sm text-red-700">The hotel story could not be loaded. Please try again later.</p> : <Pending what="The hotel story" />}<Img media={c?.image} className="aspect-[4/3] w-full rounded-2xl" label="About" /></div>
       {!!c?.highlights?.length && <div className="mt-14 grid gap-6 md:grid-cols-3">{c.highlights.map((h: any, i: number) => <div key={i} className="rounded-xl border border-sand bg-white p-6"><h3 className="text-2xl font-semibold text-forest-800">{h.title}</h3><p className="mt-2 text-sm text-[#4b5750]">{h.text}</p></div>)}</div>}</Section></>)
 }
 
@@ -63,7 +64,7 @@ export function Restaurant() {
       {c.opening_hours && <p className="mb-6 flex items-start gap-2 text-[#38443d]"><Clock className="mt-0.5 h-5 w-5 text-gold-500" /><span className="whitespace-pre-line">{c.opening_hours}</span></p>}
       {c.menu_url && <Button asChild variant="gold" className="mb-6"><a href={c.menu_url} target="_blank" rel="noreferrer">View restaurant menu</a></Button>}
       {!!c.menu_highlights?.length && <><h2 className="mb-4 text-3xl font-semibold text-forest-800">Menu highlights</h2><ul className="divide-y divide-sand">{c.menu_highlights.map((m: any, i: number) => <li key={i} className="flex justify-between gap-4 py-3"><div><div className="font-medium">{m.name}</div><div className="text-sm text-[#5b665f]">{m.description}</div></div>{m.price_minor ? <div className="font-semibold text-forest-800">{money(m.price_minor)}</div> : null}</li>)}</ul></>}</div>}
-      <div className={`grid gap-4 sm:grid-cols-2 self-start ${hasDetails ? '' : 'lg:grid-cols-3'}`}>{(c.images?.length ? c.images : [null]).slice(0, 3).map((m: any, i: number) => <Img key={i} media={m} className="aspect-[16/10] w-full rounded-xl" label="Restaurant" />)}</div></div>}</Section></>)
+      {!!c.images?.length && <div className={`grid gap-4 sm:grid-cols-2 self-start ${hasDetails ? '' : 'lg:grid-cols-3'}`}>{c.images.slice(0, 3).map((m: any, i: number) => <Img key={i} media={m} className="aspect-[16/10] w-full rounded-xl" label="Restaurant" />)}</div>}</div>}</Section></>)
 }
 
 export function Events() {
@@ -132,20 +133,55 @@ export function Contact() {
     : [p?.address, p?.town, p?.region, p?.country].filter(Boolean).join(', ')
   const src = customMap ?? (mapLocation ? `https://maps.google.com/maps?q=${encodeURIComponent(mapLocation)}&z=16&output=embed` : null)
   return (<><Seo title="Contact" path="/contact" /><PageHero title="Contact us" sub={c?.intro} />
-    <Section><div className="grid gap-10 lg:grid-cols-2"><div className="space-y-6">
-      <ul className="space-y-4 text-[#38443d]">
-        {(p?.address || p?.town) && <li className="flex gap-3"><MapPin className="h-5 w-5 text-gold-500" /><span>{[p.address, p.town, p.region, p.country].filter(Boolean).join(', ')}</span></li>}
-        {p?.phones?.map((x: string) => <li key={x} className="flex gap-3"><Phone className="h-5 w-5 text-gold-500" /><a href={`tel:${x}`} className="hover:underline">{x}</a></li>)}
-        {p?.emails?.map((x: string) => <li key={x} className="flex gap-3"><Mail className="h-5 w-5 text-gold-500" /><a href={`mailto:${x}`} className="hover:underline">{x}</a></li>)}
-        {c?.opening_hours && <li className="flex gap-3"><Clock className="h-5 w-5 text-gold-500" />{c.opening_hours}</li>}
-      </ul>
-      {!p?.phones?.length && !p?.emails?.length && <Pending what="Contact details" />}
-      {c?.directions && <Prose text={c.directions} />}</div>
-      <div className="flex flex-wrap gap-3 lg:col-start-1">
-        {c?.directions_url && <Button asChild variant="outline"><a href={c.directions_url} target="_blank" rel="noreferrer">Get directions</a></Button>}
-        {c?.booking_url && <Button asChild variant="gold"><a href={c.booking_url} target="_blank" rel="noreferrer">Book with reception</a></Button>}
+    <Section>
+      <div className="grid items-start gap-8 lg:grid-cols-[0.78fr_1.22fr] lg:gap-12">
+        <div className="space-y-6">
+          <Heading eyebrow="Reach our team" title="Get in touch" desc="For reservations, event enquiries and guest support, contact New Leaders Hotel directly." />
+
+          <div className="divide-y divide-sand overflow-hidden rounded-2xl border border-sand bg-white shadow-sm">
+            {(p?.address || p?.town) && (
+              <div className="flex gap-4 p-5">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gold-300/20"><MapPin className="h-5 w-5 text-gold-500" /></span>
+                <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a847e]">Visit us</p><p className="mt-1 leading-relaxed text-[#38443d]">{[p.address, p.town, p.region, p.country].filter(Boolean).join(', ')}</p></div>
+              </div>
+            )}
+            {!!p?.phones?.length && (
+              <div className="flex gap-4 p-5">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gold-300/20"><Phone className="h-5 w-5 text-gold-500" /></span>
+                <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a847e]">Call reception</p><div className="mt-1 flex flex-col gap-1">{p.phones.map((x: string) => <a key={x} href={`tel:${x}`} className="font-medium text-forest-800 hover:text-gold-600">{x}</a>)}</div></div>
+              </div>
+            )}
+            {!!p?.emails?.length && (
+              <div className="flex gap-4 p-5">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gold-300/20"><Mail className="h-5 w-5 text-gold-500" /></span>
+                <div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a847e]">Email us</p><div className="mt-1 flex flex-col gap-1">{p.emails.map((x: string) => <a key={x} href={`mailto:${x}`} className="break-all font-medium text-forest-800 hover:text-gold-600">{x}</a>)}</div></div>
+              </div>
+            )}
+            {c?.opening_hours && (
+              <div className="flex gap-4 p-5">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gold-300/20"><Clock className="h-5 w-5 text-gold-500" /></span>
+                <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a847e]">Opening hours</p><p className="mt-1 whitespace-pre-line leading-relaxed text-[#38443d]">{c.opening_hours}</p></div>
+              </div>
+            )}
+          </div>
+
+          {!p?.phones?.length && !p?.emails?.length && <Pending what="Contact details" />}
+          {c?.directions && <Prose text={c.directions} />}
+          <div className="flex flex-wrap gap-3">
+            {c?.directions_url && <Button asChild variant="outline"><a href={c.directions_url} target="_blank" rel="noreferrer">Get directions</a></Button>}
+            {c?.booking_url && <Button asChild variant="gold"><a href={c.booking_url} target="_blank" rel="noreferrer">Book with reception</a></Button>}
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-sand bg-white p-2 shadow-lg">
+          {src ? (
+            <iframe title="New Leaders Hotel location" src={src} className="h-[520px] w-full rounded-xl border-0 lg:h-[620px]" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+          ) : (
+            <div className="grid h-[520px] place-items-center rounded-xl bg-sand text-sm text-[#7a847e] lg:h-[620px]">Map will appear once the hotel adds it.</div>
+          )}
+        </div>
       </div>
-      <div>{src ? <iframe title="Map" src={src} className="h-96 w-full rounded-2xl border-0" loading="lazy" referrerPolicy="no-referrer-when-downgrade" /> : <div className="grid h-96 place-items-center rounded-2xl bg-sand text-sm text-[#7a847e]">Map will appear once the hotel adds it.</div>}</div></div></Section></>)
+    </Section></>)
 }
 
 export function FAQ() {

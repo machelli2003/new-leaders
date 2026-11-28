@@ -14,6 +14,7 @@ from ..hotel_settings import get_settings
 from ..security import current_user, require, require_role
 from ..services import finance, paystack
 from ..utils import paginate, ser, utcnow
+from .common import literal_search_regex
 from .hotel import compute_setup_status
 
 router = APIRouter(tags=["system"])
@@ -25,13 +26,14 @@ async def audit_logs(q: str | None = None, action: str | None = None, entity: st
                      date_to: str | None = None, page: int = 1, page_size: int = 50, user: dict = Depends(require("audit.view"))):
     query: dict = {}
     if action:
-        query["action"] = {"$regex": action, "$options": "i"}
+        query["action"] = literal_search_regex(action)
     if entity:
         query["entity"] = entity
     if actor:
-        query["actor_name"] = {"$regex": actor, "$options": "i"}
+        query["actor_name"] = literal_search_regex(actor)
     if q:
-        query["$or"] = [{"action": {"$regex": q, "$options": "i"}}, {"actor_name": {"$regex": q, "$options": "i"}}, {"entity_id": q}]
+        query["$or"] = [{"action": literal_search_regex(q)},
+                        {"actor_name": literal_search_regex(q)}, {"entity_id": q}]
     if date_from or date_to:
         rng = {}
         if date_from:

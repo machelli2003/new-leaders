@@ -9,7 +9,10 @@ from .db import get_db
 from .utils import new_id, utcnow
 
 request_meta: ContextVar[dict] = ContextVar("request_meta", default={})
-SECRET_FIELDS = {"password", "password_hash", "mfa_secret", "token_hash", "secret", "otp", "access_token"}
+SECRET_FIELDS = {
+    "password", "password_hash", "mfa_secret", "mfa_pending_secret", "token_hash",
+    "password_reset_token", "reset_token", "secret", "otp", "access_token",
+}
 
 
 def scrub(o: Any) -> Any:

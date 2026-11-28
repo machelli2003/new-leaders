@@ -344,5 +344,14 @@ async def reject_event_cancellation(reservation_id: str, user: dict = Depends(re
     if not reservation:
         raise HTTPException(404, "Event booking not found")
     from ..services.reservations import reject_cancellation_request
-
     return ser(await reject_cancellation_request(db, reservation, user))
+
+
+@router.post("/event-bookings/admin/{reservation_id}/review-change-request")
+async def review_event_change_request(reservation_id: str, user: dict = Depends(require("reservations.manage"))):
+    db = get_db()
+    reservation = await db.reservations.find_one({"_id": reservation_id, "booking_type": "event"})
+    if not reservation:
+        raise HTTPException(404, "Event booking not found")
+    from ..services.reservations import review_change_request
+    return ser(await review_change_request(db, reservation, user))

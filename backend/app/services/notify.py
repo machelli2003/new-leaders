@@ -79,6 +79,8 @@ TEMPLATES = {
     "checkin_reminder": ("Your stay is coming up", "A reminder of your upcoming stay with us."),
     "booking_expired": ("Booking hold expired", "Your booking hold expired because payment was not completed. You are welcome to book again."),
     "cancellation_requested": ("Cancellation request received", "We received your cancellation request and will respond shortly."),
+    "change_request_received": ("Change request received", "We received your change request and will review it shortly."),
+    "change_request_reviewed": ("Change request reviewed", "The hotel has reviewed your request. Please contact the hotel if you need to discuss the requested changes."),
 }
 
 

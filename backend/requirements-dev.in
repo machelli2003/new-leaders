@@ -1,0 +1,10 @@
+# Direct development requirements. Compile to requirements-dev.txt with hashes.
+-r requirements.in
+pytest>=8
+pytest-asyncio>=0.23
+mongomock>=4.3
+mongomock-motor>=0.0.36
+pip-tools==7.7.0
+bandit>=1.8
+detect-secrets>=1.5
+pip-audit>=2.9

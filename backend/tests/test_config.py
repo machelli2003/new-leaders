@@ -1,6 +1,27 @@
 import pytest
+from pydantic import ValidationError
 
-from app.config import get_config
+from app.config import Settings, get_config
+
+
+def test_app_environment_is_required(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.setenv("JWT_SECRET", "test-secret-is-explicitly-provided")
+    get_config.cache_clear()
+    try:
+        with pytest.raises(ValidationError, match="app_env"):
+            get_config()
+    finally:
+        get_config.cache_clear()
+
+
+def test_jwt_secret_is_required(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    with pytest.raises(ValidationError, match="jwt_secret"):
+        Settings(_env_file=None)
 
 
 def test_empty_jwt_secret_fails_with_configuration_error(monkeypatch):

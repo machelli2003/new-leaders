@@ -153,6 +153,34 @@ async def test_bookings_are_private_to_email(client, hotel):
     assert "internal_notes" not in ok.json()
 
 
+async def test_negative_reservation_charge_is_rejected(client, hotel, manager_h, db):
+    booking = (await book(client, hotel)).json()
+    reservation = await db.reservations.find_one({"reference": booking["reference"]})
+    response = await client.post(
+        f"/api/v1/reservations/{reservation['_id']}/charges",
+        headers=manager_h,
+        json={"description": "Invalid adjustment", "amount_minor": -100},
+    )
+    assert response.status_code == 400
+    assert await db.reservations.find_one({"_id": reservation["_id"]}) == reservation
+
+
+async def test_guest_change_request_is_private_single_pending_and_staff_reviewed(client, hotel, db, recep_h, manager_h):
+    booking = (await book(client, hotel)).json()
+    payload = {"reference": booking["reference"], "email": "ama@example.com", "message": "Please add one extra guest"}
+    request = await client.post("/api/v1/bookings/change-request", json=payload)
+    assert request.status_code == 200 and request.json()["change_request"]["status"] == "pending"
+    assert (await client.post("/api/v1/bookings/change-request", json={**payload, "email": "other@example.com"})).status_code == 404
+    assert (await client.post("/api/v1/bookings/change-request", json=payload)).status_code == 409
+
+    res = await db.reservations.find_one({"reference": booking["reference"]})
+    path = f"/api/v1/reservations/{res['_id']}/review-change-request"
+    assert (await client.post(path, headers=recep_h)).status_code == 403
+    reviewed = await client.post(path, headers=manager_h)
+    assert reviewed.status_code == 200 and reviewed.json()["change_request"]["status"] == "reviewed"
+    assert (await client.post(path, headers=manager_h)).status_code == 409
+
+
 async def test_unique_booking_references(client, hotel):
     refs = set()
     for i in range(5):

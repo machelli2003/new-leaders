@@ -4,12 +4,11 @@ import { ArrowRight, BedDouble, CalendarDays, Check, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Img } from '@/components/Img'
 import { Container, EventVenueCard, Heading, Pending, Prose, Reveal, RoomCard, Section } from './Parts'
-import { useEventVenues, useGallery, useItems, useOffers, useRooms, useSection, useSite } from './data'
+import { useEventVenues, useGallery, useItems, useOffers, useRooms, useSection } from './data'
 import { Seo } from '@/components/Seo'
 
 export default function Home() {
   const [videoLoaded, setVideoLoaded] = useState(false)
-  const { data: site } = useSite()
   const hero = useSection('home.hero').data?.content
   const intro = useSection('home.intro').data?.content
   const restaurant = useSection('restaurant').data?.content
@@ -22,11 +21,10 @@ export default function Home() {
   const { data: testimonials } = useItems('testimonial')
   const { data: eventVenues } = useEventVenues()
 
-  const p = site?.profile
   const rooms = (featured?.length ? featured : allRooms)?.slice(0, 3) ?? []
-  const banner = hero?.banner_images?.[0] ?? p?.banner_images?.[0]
-  const roomsBackdrop = rooms[0]?.main_image ?? p?.banner_images?.[1] ?? gallery?.[1] ?? banner
-  const diningImg = restaurant?.images?.[0] ?? gallery?.[4] ?? p?.banner_images?.[2] ?? banner
+  const banner = hero?.banner_images?.[0]
+  const roomsBackdrop = rooms[0]?.main_image
+  const diningImg = restaurant?.images?.[0]
   return (
     <>
       <Seo path="/" />

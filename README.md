@@ -10,8 +10,8 @@ Single-hotel booking, operations and website system. React + TypeScript + Vite +
 # 1. Backend (Python 3.11+)
 cd backend
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
-cp ../.env.example .env          # set MONGODB_URL and JWT_SECRET (>=32 random chars)
+pip install --require-hashes -r requirements-dev.txt
+cp ../.env.example .env          # set APP_ENV=development, MONGODB_URL and JWT_SECRET (>=32 random chars)
 python -m scripts.create_super_admin   # interactive; creates "Machellix"
 uvicorn app.main:app --reload    # http://localhost:8000/docs
 
@@ -23,7 +23,7 @@ npm run dev                      # http://localhost:5173 (proxies /api to :8000)
 
 Optional dev-only sample content: `python -m scripts.seed_sample` (every record is marked SAMPLE; remove before launch).
 
-For Docker Compose, copy `.env.example` to the project root as `.env`, set `MONGODB_URL` to the MongoDB Atlas connection string, then run `docker compose up --build`.
+For direct deployments, install production dependencies with `pip install --require-hashes -r backend/requirements.txt`. Dependency constraints live in `backend/requirements.in`. From `backend`, update the locks with `python -m piptools compile --allow-unsafe --generate-hashes --output-file requirements.txt requirements.in` and `python -m piptools compile --allow-unsafe --generate-hashes --output-file requirements-dev.txt requirements-dev.in`.
 
 ## First-time setup
 1. Sign in at `/super-admin/login`, open **Setup wizard**, and create a **Hotel Admin** under Admin → Staff (Super Admin enters the hotel portal at `/admin`, audited).
@@ -33,6 +33,9 @@ For Docker Compose, copy `.env.example` to the project root as `.env`, set `MONG
 ## Tests
 `cd backend && pytest` — backend unit tests (auth/RBAC, booking, payments, pricing, CMS, and media).
 Frontend: `cd frontend && npx tsc -b && npm run build`.
+
+## Security scans
+GitHub Actions runs security checks on pushes, pull requests, and weekly: `pip-audit` checks both Python lockfiles, Bandit checks high-severity/high-confidence Python findings, `npm audit` checks frontend dependencies, and `detect-secrets` scans tracked files against `.secrets.baseline`. Review new secret-baseline entries before accepting them.
 
 ## Documentation
 - `docs/DEPLOYMENT.md` — environment variables, Paystack, email, storage, hosting, backups

@@ -1,18 +1,24 @@
 """Public guest booking API: search, quote, book (hold), pay, lookup, cancellation request, optional guest accounts."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+import html
+import secrets
+from datetime import timedelta
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field, model_validator
+from pymongo.errors import DuplicateKeyError
 
 from ..audit import audit
+from ..config import get_config
 from ..db import get_db
 from ..hotel_settings import get_settings
 from ..security import (booking_limiter, create_access_token, decode_token, hash_password, public_limiter, validate_password_strength,
-                        payment_status_limiter, verify_password)
+                        payment_status_limiter, hash_password_reset_token, hash_verification_code, verify_password)
 from ..services import availability as av
 from ..services import finance
 from ..services import reservations as rs
-from ..services.notify import notify_guest, notify_staff
+from ..services.notify import notify_guest, notify_staff, send_email
 from ..services.pricing import build_quote, payment_options, stay_dates
 from ..utils import ser, utcnow
 
@@ -48,7 +54,7 @@ class BookIn(StayIn):
 
 def _public_res(res: dict, rrs: list[dict] | None = None, payments: list[dict] | None = None, options: dict | None = None) -> dict:
     d = {k: res.get(k) for k in ("reference", "booking_type", "event_booking", "status", "payment_status", "guest", "check_in", "check_out", "nights", "adults", "children",
-                                  "special_requests", "total_amount", "amount_paid", "balance", "hold_expires_at", "cancellation")}
+                                  "special_requests", "total_amount", "amount_paid", "balance", "hold_expires_at", "cancellation", "change_request")}
     d["pricing"] = {k: res["pricing"].get(k) for k in ("currency", "accommodation_minor", "extra_guest_minor", "discount", "taxes", "total_minor")}
     d["charges"] = res.get("charges", [])
     if rrs is not None:
@@ -201,6 +207,18 @@ async def cancel_request(body: CancelReqIn):
     return await _full(db, res)
 
 
+class ChangeReqIn(LookupIn):
+    message: str = Field(min_length=5, max_length=1000)
+
+
+@router.post("/bookings/change-request", dependencies=[Depends(booking_limiter)])
+async def change_request(body: ChangeReqIn):
+    db = get_db()
+    res = await _get_by_ref(db, body.reference, body.email, body.phone)
+    res = await rs.request_change(db, res, body.message)
+    return await _full(db, res)
+
+
 @router.post("/bookings/cancel-preview", dependencies=[Depends(booking_limiter)])
 async def cancel_preview(body: LookupIn):
     db = get_db()
@@ -219,14 +237,114 @@ class GuestLoginIn(BaseModel):
     password: str
 
 
-@router.post("/bookings/account/register", status_code=201, dependencies=[Depends(booking_limiter)])
+class PasswordResetRequestIn(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmIn(BaseModel):
+    token: str = Field(min_length=32, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    password: str = Field(max_length=128)
+
+
+class VerifyRegistrationIn(RegisterIn):
+    code: str = Field(min_length=6, max_length=6)
+
+
+@router.post("/bookings/account/register", status_code=202, dependencies=[Depends(booking_limiter)])
 async def guest_register(body: RegisterIn):
     db = get_db()
     validate_password_strength(body.password, body.email)
-    g = await rs.upsert_guest(db, body.model_dump(exclude={"password"}))
-    if g.get("password_hash"):
+    email = str(body.email).strip().lower()
+    g = await db.guests.find_one({"email": email})
+    if g and g.get("password_hash"):
         raise HTTPException(409, "An account already exists for this email")
-    await db.guests.update_one({"_id": g["_id"]}, {"$set": {"password_hash": hash_password(body.password), "token_version": 0, "has_account": True}})
+
+    now = utcnow()
+    existing = await db.account_verifications.find_one({"email": email})
+    if existing and existing["expires_at"] > now:
+        raise HTTPException(429, "A verification code was recently sent. Please wait before trying again.")
+    if existing:
+        removed = await db.account_verifications.delete_one(
+            {"_id": existing["_id"], "expires_at": {"$lte": now}}
+        )
+        if not removed.deleted_count:
+            raise HTTPException(429, "A verification code was recently sent. Please wait before trying again.")
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    expires_at = now + timedelta(minutes=10)
+    record = {
+        "_id": secrets.token_urlsafe(32),
+        "email": email,
+        "password_hash": hash_password(body.password),
+        "name": body.name.strip(),
+        "phone": body.phone,
+        "country": body.country,
+        "code_hash": hash_verification_code(email, code),
+        "attempts": 0,
+        "expires_at": expires_at,
+        "created_at": utcnow(),
+    }
+    try:
+        await db.account_verifications.insert_one(record)
+    except DuplicateKeyError as exc:
+        raise HTTPException(429, "A verification code was recently sent. Please wait before trying again.") from exc
+    await send_email(
+        db,
+        email,
+        "Verify your New Leaders Hotel account",
+        f"<p>Your account verification code is <strong>{code}</strong>.</p><p>This code expires in 10 minutes.</p>",
+        "account_verification",
+    )
+    return {"verification_required": True, "email": email}
+
+
+@router.post("/bookings/account/register/verify", status_code=201, dependencies=[Depends(booking_limiter)])
+async def verify_guest_register(body: VerifyRegistrationIn):
+    db = get_db()
+    email = str(body.email).strip().lower()
+    record = await db.account_verifications.find_one({"email": email})
+    if not record:
+        raise HTTPException(400, "Invalid or expired verification code")
+    if record["expires_at"] < utcnow():
+        await db.account_verifications.delete_one({"_id": record["_id"]})
+        raise HTTPException(400, "Invalid or expired verification code")
+    code_hash = hash_verification_code(email, body.code)
+    if not secrets.compare_digest(record["code_hash"], code_hash):
+        attempt = await db.account_verifications.update_one(
+            {"_id": record["_id"], "attempts": {"$lt": 5}, "expires_at": {"$gt": utcnow()}},
+            {"$inc": {"attempts": 1}},
+        )
+        if not attempt.matched_count:
+            current = await db.account_verifications.find_one({"_id": record["_id"]})
+            if current and current["attempts"] >= 5:
+                raise HTTPException(429, "Too many verification attempts")
+        raise HTTPException(400, "Invalid or expired verification code")
+
+    consumed = await db.account_verifications.find_one_and_delete(
+        {"_id": record["_id"], "code_hash": code_hash, "attempts": {"$lt": 5}, "expires_at": {"$gt": utcnow()}}
+    )
+    if not consumed:
+        current = await db.account_verifications.find_one({"_id": record["_id"]})
+        if current and current["attempts"] >= 5:
+            raise HTTPException(429, "Too many verification attempts")
+        raise HTTPException(400, "Invalid or expired verification code")
+
+    g = await rs.upsert_guest(db, {
+        "name": consumed["name"],
+        "email": email,
+        "phone": consumed["phone"],
+        "country": consumed["country"],
+    })
+    await db.guests.update_one(
+        {"_id": g["_id"]},
+        {"$set": {
+            "password_hash": consumed["password_hash"],
+            "token_version": 0,
+            "has_account": True,
+            "email_verified": True,
+            "updated_at": utcnow(),
+        }},
+    )
     g = await db.guests.find_one({"_id": g["_id"]})
     return {"access_token": create_access_token(g, typ="guest"), "guest": {"name": g["name"], "email": g["email"]}}
 
@@ -235,9 +353,84 @@ async def guest_register(body: RegisterIn):
 async def guest_login(body: GuestLoginIn):
     db = get_db()
     g = await db.guests.find_one({"email": body.email.lower()})
-    if not g or not g.get("password_hash") or not verify_password(body.password, g["password_hash"]):
+    if (not g or not g.get("has_account") or not g.get("email_verified")
+            or not g.get("password_hash") or not verify_password(body.password, g["password_hash"])):
         raise HTTPException(401, "Invalid email or password")
     return {"access_token": create_access_token(g, typ="guest"), "guest": {"name": g["name"], "email": g["email"]}}
+
+
+@router.post("/bookings/account/password-reset/request", status_code=202, dependencies=[Depends(booking_limiter)])
+async def request_guest_password_reset(body: PasswordResetRequestIn, background_tasks: BackgroundTasks):
+    db = get_db()
+    email = str(body.email).strip().lower()
+    guest = await db.guests.find_one({"email": email, "has_account": True, "email_verified": True})
+    if guest:
+        now = utcnow()
+        existing = await db.account_password_resets.find_one({"guest_id": guest["_id"]})
+        if existing and existing["expires_at"] > now:
+            return {"message": "If an account exists for that email, reset instructions will be sent."}
+        if existing:
+            await db.account_password_resets.delete_one(
+                {"_id": existing["_id"], "expires_at": {"$lte": now}}
+            )
+
+        token = secrets.token_urlsafe(32)
+        reset = {
+            "_id": secrets.token_urlsafe(32),
+            "guest_id": guest["_id"],
+            "token_hash": hash_password_reset_token(token),
+            "expires_at": now + timedelta(minutes=10),
+            "created_at": now,
+        }
+        try:
+            await db.account_password_resets.insert_one(reset)
+        except DuplicateKeyError:
+            pass
+        else:
+            reset_url = f"{get_config().public_base_url.rstrip('/')}/booking/password-reset#token={token}"
+            link = html.escape(reset_url, quote=True)
+            background_tasks.add_task(
+                send_email,
+                db,
+                email,
+                "Reset your New Leaders Hotel account password",
+                f"<p>Use this link to reset your password. It expires in 10 minutes and can be used once:</p>"
+                f'<p><a href="{link}">Reset password</a></p>',
+                "account_password_reset",
+            )
+    return {"message": "If an account exists for that email, reset instructions will be sent."}
+
+
+@router.post("/bookings/account/password-reset/confirm", dependencies=[Depends(booking_limiter)])
+async def confirm_guest_password_reset(body: PasswordResetConfirmIn):
+    db = get_db()
+    token_hash = hash_password_reset_token(body.token)
+    reset = await db.account_password_resets.find_one(
+        {"token_hash": token_hash, "expires_at": {"$gt": utcnow()}}
+    )
+    if not reset:
+        raise HTTPException(400, "Invalid or expired password reset link")
+    guest = await db.guests.find_one(
+        {"_id": reset["guest_id"], "has_account": True, "email_verified": True}
+    )
+    if not guest:
+        raise HTTPException(400, "Invalid or expired password reset link")
+    validate_password_strength(body.password, guest["email"])
+    consumed = await db.account_password_resets.find_one_and_delete(
+        {"_id": reset["_id"], "token_hash": token_hash, "expires_at": {"$gt": utcnow()}}
+    )
+    if not consumed:
+        raise HTTPException(400, "Invalid or expired password reset link")
+    updated = await db.guests.update_one(
+        {"_id": guest["_id"], "has_account": True, "email_verified": True},
+        {"$set": {"password_hash": hash_password(body.password), "updated_at": utcnow()},
+         "$inc": {"token_version": 1}},
+    )
+    if not updated.matched_count:
+        raise HTTPException(400, "Invalid or expired password reset link")
+    await db.account_password_resets.delete_many({"guest_id": guest["_id"]})
+    await audit(None, "auth.guest_password_reset", "guest", guest["_id"])
+    return {"message": "Password reset successfully."}
 
 
 @router.get("/bookings/account/bookings")
@@ -250,6 +443,10 @@ async def guest_bookings(request: Request):
     g = await db.guests.find_one({"_id": data["sub"]})
     if not g:
         raise HTTPException(401, "Account not found")
+    if not g.get("has_account") or not g.get("email_verified"):
+        raise HTTPException(401, "Account not verified")
+    if g.get("token_version", 0) != data.get("ver", 0):
+        raise HTTPException(401, "Session expired, please sign in again")
     items = await db.reservations.find({"guest_id": g["_id"]}).sort([("check_in", -1)]).to_list(100)
     return {"guest": {"name": g["name"], "email": g["email"], "phone": g.get("phone"), "country": g.get("country")},
             "bookings": [await _full(db, r) for r in items]}

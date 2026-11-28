@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import ipaddress
 import logging
 import re
 import secrets
@@ -68,11 +69,37 @@ def verify_password(pw: str, hashed: str) -> bool:
         return False
 
 
+def hash_verification_code(email: str, code: str) -> str:
+    cfg = get_config()
+    payload = f"email-verification:{email.strip().lower()}:{code.strip()}".encode()
+    return hmac.new(cfg.jwt_secret.encode(), payload, hashlib.sha256).hexdigest()
+
+
+def hash_password_reset_token(token: str) -> str:
+    payload = f"guest-password-reset:{token}".encode()
+    return hmac.new(get_config().jwt_secret.encode(), payload, hashlib.sha256).hexdigest()
+
+
 def validate_password_strength(pw: str, email: str = "") -> None:
-    if len(pw) < 10:
-        raise HTTPException(422, "Password must be at least 10 characters")
-    if not re.search(r"[A-Za-z]", pw) or not re.search(r"\d", pw):
-        raise HTTPException(422, "Password must contain letters and numbers")
+    if len(pw) < 12:
+        raise HTTPException(422, "Password must be at least 12 characters")
+    if len(pw) > 128:
+        raise HTTPException(422, "Password must be no more than 128 characters")
+    character_classes = (
+        r"[a-z]",
+        r"[A-Z]",
+        r"\d",
+        r"[^A-Za-z0-9]",
+    )
+    if sum(bool(re.search(pattern, pw)) for pattern in character_classes) < 3:
+        raise HTTPException(422, "Password must include at least three character types")
+    if len(set(pw)) < 5:
+        raise HTTPException(422, "Password is too repetitive")
+    if pw.casefold() in {
+        "password123", "password1234", "passw0rd", "qwerty123",
+        "welcome123", "letmein123", "admin123456",
+    }:
+        raise HTTPException(422, "Choose a less common password")
     if email and pw.lower() == email.lower():
         raise HTTPException(422, "Password must not equal your email")
 
@@ -168,10 +195,13 @@ async def optional_user(request: Request, creds: HTTPAuthorizationCredentials | 
 def require(*perms: str, any_of: bool = False):
     """Server-side permission enforcement. Frontend hiding is cosmetic only."""
 
-    async def dep(user: dict = Depends(current_user)) -> dict:
+    async def dep(request: Request, user: dict = Depends(current_user)) -> dict:
         have = user["_perms"]
         ok = any(p in have for p in perms) if any_of else all(p in have for p in perms)
         if not ok:
+            from .audit import audit
+
+            await audit(user, "auth.authorization_denied", "endpoint", request.url.path, note=request.method)
             raise HTTPException(403, "You do not have permission to perform this action")
         return user
 
@@ -179,8 +209,11 @@ def require(*perms: str, any_of: bool = False):
 
 
 def require_role(*roles: str):
-    async def dep(user: dict = Depends(current_user)) -> dict:
+    async def dep(request: Request, user: dict = Depends(current_user)) -> dict:
         if user["role"] not in roles:
+            from .audit import audit
+
+            await audit(user, "auth.authorization_denied", "endpoint", request.url.path, note=request.method)
             raise HTTPException(403, "Not allowed for your role")
         return user
 
@@ -189,11 +222,33 @@ def require_role(*roles: str):
 
 # ---------- rate limiting ----------
 def client_ip(request: Request) -> str:
-    if get_config().trust_proxy:
-        fwd = request.headers.get("x-forwarded-for")
-        if fwd:
-            return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    peer = request.client.host if request.client else ""
+    cfg = get_config()
+    if cfg.trust_proxy and peer:
+        try:
+            peer_address = ipaddress.ip_address(peer)
+            trusted = [
+                ipaddress.ip_network(cidr.strip(), strict=False)
+                for cidr in cfg.trusted_proxy_cidrs.split(",")
+                if cidr.strip()
+            ]
+
+            def is_trusted(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+                return any(address in network for network in trusted)
+
+            if is_trusted(peer_address):
+                forwarded = request.headers.get("x-forwarded-for", "")
+                chain = [entry.strip() for entry in forwarded.split(",") if entry.strip()]
+                for entry in reversed(chain):
+                    try:
+                        address = ipaddress.ip_address(entry)
+                    except ValueError:
+                        continue
+                    if not is_trusted(address):
+                        return str(address)
+        except ValueError:
+            pass
+    return peer or "unknown"
 
 
 class RateLimiter:

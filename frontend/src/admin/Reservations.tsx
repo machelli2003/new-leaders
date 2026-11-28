@@ -77,10 +77,11 @@ export function ReservationDetail() {
   const confirm = useAct(() => post('/confirm'), { invalidate: inv, ok: 'Confirmed' })
   const noShow = useAct(() => post('/no-show'), { invalidate: inv, ok: 'Marked no-show' })
   const rejectC = useAct(() => post('/reject-cancellation'), { invalidate: inv, ok: 'Request rejected' })
+  const reviewChange = useAct(() => post('/review-change-request'), { invalidate: inv, ok: 'Change request marked reviewed' })
   const cancel = useAct(() => post('/cancel', { reason: f.reason ?? '', waive_fee: !!f.waive, refund_amount_minor: f.refund !== undefined && f.refund !== '' ? toMinor(f.refund) : null }), { invalidate: inv, ok: 'Reservation cancelled', onOk: () => setDlg(null) })
   const dates = useAct(() => post('/modify-dates', { check_in: f.ci, check_out: f.co, reason: f.reason ?? '' }), { invalidate: inv, ok: 'Dates updated', onOk: () => setDlg(null) })
   const charge = useAct(() => post('/charges', { description: f.desc, amount_minor: toMinor(f.amt) }), { invalidate: inv, ok: 'Charge added', onOk: () => setDlg(null) })
-  const pay = useAct(() => api('/payments/offline', { body: { reservation_id: id, amount_minor: toMinor(f.amt), method: f.method ?? 'cash', note: f.note ?? '' } }), { invalidate: inv, ok: 'Payment recorded', onOk: () => setDlg(null) })
+  const pay = useAct(() => api('/payments/offline', { body: { reservation_id: id, amount_minor: toMinor(f.amt), method: f.method ?? 'cash', note: f.note ?? '', idempotency_key: f.idempotencyKey } }), { invalidate: inv, ok: 'Payment recorded', onOk: () => setDlg(null) })
   const refund = useAct(() => api('/refunds', { body: { reservation_id: id, amount_minor: toMinor(f.amt), reason: f.reason } }), { invalidate: inv, ok: 'Refund requested', onOk: () => setDlg(null) })
   const assign = useAct(() => post(`/rooms/${f.rr}/assign`, { room_id: f.room, reason: f.reason ?? '' }), { invalidate: inv, ok: 'Room assigned', onOk: () => setDlg(null) })
   const patch = useAct(() => api(`/reservations/${id}`, { method: 'PATCH', body: { internal_notes: f.notes } }), { invalidate: inv, ok: 'Notes saved' })
@@ -96,6 +97,10 @@ export function ReservationDetail() {
       {can('reservations.manage') && ['pending', 'confirmed', 'cancellation_requested'].includes(r.status) && <Button variant="destructive" onClick={() => open('cancel')}>Cancel</Button>}</>} />
     {r.needs_attention && <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">⚠ Needs attention: {r.attention_reason ?? 'payment received but rooms could not be secured. Review refund.'}</div>}
     {r.status === 'cancellation_requested' && <div className="mb-4 flex items-center justify-between rounded-lg border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900"><span>Guest requested cancellation{r.cancellation_request?.reason ? `: ${r.cancellation_request.reason}` : ''}.</span>{can('reservations.manage') && <Button size="sm" variant="outline" onClick={() => rejectC.mutate(undefined)}>Reject request</Button>}</div>}
+    {r.change_request && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900">
+      <span>Guest change request ({r.change_request.status}): {r.change_request.message}</span>
+      {can('reservations.manage') && r.change_request.status === 'pending' && <Button size="sm" variant="outline" loading={reviewChange.isPending} onClick={() => reviewChange.mutate(undefined)}>Mark reviewed</Button>}
+    </div>}
     <div className="grid gap-4 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
         <Card><CardHeader><h3 className="font-semibold">Overview</h3><div className="flex gap-2"><StatusBadge status={r.status} /><StatusBadge status={r.payment_status} /></div></CardHeader><CardBody className="grid gap-3 text-sm sm:grid-cols-2">
@@ -105,7 +110,7 @@ export function ReservationDetail() {
           {r.hold_expires_at && r.status === 'pending' && <div className="sm:col-span-2 text-amber-700">Hold expires {fmtDateTime(r.hold_expires_at)}</div>}</CardBody></Card>
         <Card><CardHeader><h3 className="font-semibold">Rooms</h3></CardHeader><CardBody className="space-y-2 text-sm">{q.data.rooms.map((rr: any) => <div key={rr.id} className="flex flex-wrap items-center justify-between gap-2"><span>{rr.category_name} · <b>Room {rr.room_number}</b> <StatusBadge status={rr.status} /></span>
           {can('reservations.assign') && ['reserved', 'checked_in'].includes(rr.status) && <Button size="sm" variant="outline" onClick={() => open('assign', { rr: rr.id })}>Reassign</Button>}</div>)}</CardBody></Card>
-        <Card><CardHeader><h3 className="font-semibold">Payments</h3>{can('payments.record') && r.balance > 0 && !['cancelled', 'expired'].includes(r.status) && <Button size="sm" onClick={() => open('pay', { amt: fromMinor(r.balance), method: 'cash' })}>Record payment</Button>}</CardHeader>
+        <Card><CardHeader><h3 className="font-semibold">Payments</h3>{can('payments.record') && r.balance > 0 && !['cancelled', 'expired'].includes(r.status) && <Button size="sm" onClick={() => open('pay', { amt: fromMinor(r.balance), method: 'cash', idempotencyKey: crypto.randomUUID() })}>Record payment</Button>}</CardHeader>
           <CardBody>{q.data.payments.length ? <Table><thead><tr><Th>Receipt</Th><Th>Method</Th><Th>Status</Th><Th>Amount</Th><Th>Date</Th></tr></thead><tbody>{q.data.payments.map((p: any) => <tr key={p.id}><Td>{p.receipt_number ?? '—'}</Td><Td>{p.method}</Td><Td><StatusBadge status={p.status} /></Td><Td>{money(p.amount)}</Td><Td>{fmtDateTime(p.created_at)}</Td></tr>)}</tbody></Table> : <p className="text-sm text-[var(--muted)]">No payments yet.</p>}</CardBody></Card>
         {q.data.refunds.length > 0 && <Card><CardHeader><h3 className="font-semibold">Refunds</h3></CardHeader><CardBody className="space-y-1 text-sm">{q.data.refunds.map((x: any) => <div key={x.id} className="flex justify-between"><span>{x.reason}</span><span className="flex gap-2">{money(x.amount)} <StatusBadge status={x.status} /></span></div>)}</CardBody></Card>}
       </div>

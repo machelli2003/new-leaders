@@ -85,10 +85,14 @@ export function EventVenuesAdmin() {
 }
 
 export function EventBookingsAdmin() {
+  const { can } = useAuth()
   const bookings = useGet<any[]>(['event-bookings'], '/event-bookings/admin')
   const [cancel, setCancel] = useState<any>(null)
   const reject = useAct((id: string) => api(`/event-bookings/admin/${id}/reject-cancellation`, { method: 'POST' }), {
     ok: 'Cancellation request declined', invalidate: [['event-bookings']],
+  })
+  const reviewChange = useAct((id: string) => api(`/event-bookings/admin/${id}/review-change-request`, { method: 'POST' }), {
+    ok: 'Change request marked reviewed', invalidate: [['event-bookings']],
   })
   const cancelBooking = useAct(() => api(`/event-bookings/admin/${cancel.id}/cancel`, {
     method: 'POST', body: { reason: 'Cancelled by hotel staff' },
@@ -104,7 +108,10 @@ export function EventBookingsAdmin() {
             <Td>{event?.date}<div className="text-xs text-[var(--muted)]">{event?.start_time}–{event?.end_time}</div></Td>
             <Td>{b.guest?.name}<div className="text-xs text-[var(--muted)]">{b.guest?.email}</div></Td>
             <Td>{event?.attendees}</Td><Td>{money(b.total_amount, b.pricing?.currency)}</Td><Td><StatusBadge status={b.status} />{b.needs_attention && <div className="mt-1 text-xs text-red-700">{b.attention_reason}</div>}</Td>
-            <Td><StatusBadge status={b.payment_status} /></Td><Td>{b.status === 'cancellation_requested' && <Button size="sm" variant="outline" loading={reject.isPending} onClick={() => reject.mutate(b.id)}>Decline request</Button>}{['pending', 'confirmed', 'cancellation_requested'].includes(b.status) && <Button size="sm" variant="destructive" onClick={() => setCancel(b)}>Cancel</Button>}</Td>
+            <Td><StatusBadge status={b.payment_status} />{b.change_request && <div className="mt-1 text-xs text-sky-800">Change ({b.change_request.status}): {b.change_request.message}</div>}</Td>
+            <Td>{b.status === 'cancellation_requested' && <Button size="sm" variant="outline" loading={reject.isPending} onClick={() => reject.mutate(b.id)}>Decline request</Button>}
+              {can('reservations.manage') && b.change_request?.status === 'pending' && <Button size="sm" variant="outline" loading={reviewChange.isPending} onClick={() => reviewChange.mutate(b.id)}>Mark change reviewed</Button>}
+              {['pending', 'confirmed', 'cancellation_requested'].includes(b.status) && <Button size="sm" variant="destructive" onClick={() => setCancel(b)}>Cancel</Button>}</Td>
           </tr>
         })}</tbody></Table>}
     </QueryState>

@@ -17,6 +17,7 @@ from ..services.notify import notify_guest, notify_staff
 from ..services.pricing import payment_options
 from ..utils import paginate, parse_date, ser, stay_dates, today, utcnow
 from ..hotel_settings import get_settings
+from .common import literal_search_regex
 
 router = APIRouter(tags=["reservations"])
 
@@ -32,7 +33,7 @@ async def calendar(start: str | None = None, days: int = Query(14, ge=1, le=62),
     if category_id:
         rq["category_id"] = category_id
     if q:
-        rq["number"] = {"$regex": q, "$options": "i"}
+        rq["number"] = literal_search_regex(q)
     rooms = await db.rooms.find(rq).sort([("number", 1)]).to_list(None)
     ids = [r["_id"] for r in rooms]
     now = utcnow()
@@ -107,7 +108,7 @@ def _list_query(q, status, payment_status, check_in_from, check_in_to, stay_on):
     if payment_status:
         query["payment_status"] = payment_status
     if q:
-        rx = {"$regex": q, "$options": "i"}
+        rx = literal_search_regex(q)
         query["$or"] = [{"reference": rx}, {"guest.name": rx}, {"guest.email": rx}, {"guest.phone": rx}]
     rng = {}
     if check_in_from:
@@ -246,6 +247,11 @@ async def reject_cancel(rid: str, user: dict = Depends(require("reservations.man
     return ser(await rs.reject_cancellation_request(get_db(), await _load(rid), user))
 
 
+@router.post("/reservations/{rid}/review-change-request")
+async def review_change_request(rid: str, user: dict = Depends(require("reservations.manage"))):
+    return ser(await rs.review_change_request(get_db(), await _load(rid), user))
+
+
 @router.post("/reservations/{rid}/confirm")
 async def confirm(rid: str, user: dict = Depends(require("reservations.manage"))):
     db = get_db()
@@ -291,7 +297,7 @@ class GuestPatch(BaseModel):
 async def list_guests(q: str | None = None, page: int = 1, page_size: int = 25, user: dict = Depends(require("guests.view"))):
     query: dict = {}
     if q:
-        rx = {"$regex": q, "$options": "i"}
+        rx = literal_search_regex(q)
         query["$or"] = [{"name": rx}, {"email": rx}, {"phone": rx}]
     out = await paginate(get_db().guests, query, [("created_at", -1)], page, page_size)
     if "guests.notes" not in user["_perms"]:
@@ -349,7 +355,8 @@ async def list_payments(status: str | None = None, method: str | None = None, q:
     if method:
         query["method"] = method
     if q:
-        query["$or"] = [{"reference": {"$regex": q, "$options": "i"}}, {"reservation_reference": {"$regex": q, "$options": "i"}}]
+        query["$or"] = [{"reference": literal_search_regex(q)},
+                        {"reservation_reference": literal_search_regex(q)}]
     if date_from or date_to:
         from datetime import datetime
 
@@ -367,12 +374,15 @@ class OfflineIn(BaseModel):
     amount_minor: int = Field(gt=0)
     method: Literal["cash", "mobile_money", "card_pos", "bank_transfer", "other"] = "cash"
     note: str = Field(default="", max_length=300)
+    idempotency_key: str = Field(min_length=16, max_length=128)
 
 
 @router.post("/payments/offline", status_code=201)
 async def record_offline(body: OfflineIn, user: dict = Depends(require("payments.record"))):
     db = get_db()
-    p = await finance.record_offline(db, await _load(body.reservation_id), body.amount_minor, body.method, body.note, user)
+    p = await finance.record_offline(
+        db, await _load(body.reservation_id), body.amount_minor, body.method, body.note, user, body.idempotency_key
+    )
     res = await db.reservations.find_one({"_id": body.reservation_id})
     await notify_guest(db, "payment_confirmation", res)
     return ser(p)
@@ -414,6 +424,8 @@ async def approve_refund(fid: str, user: dict = Depends(require("refunds.manage"
     r = await db.refunds.find_one({"_id": fid})
     if not r or r["status"] != "requested":
         raise HTTPException(409, "Refund is not awaiting approval")
+    if r.get("requested_by") == user["_id"]:
+        raise HTTPException(403, "Refund requester cannot approve the refund")
     changed = await db.refunds.update_one(
         {"_id": fid, "status": "requested"},
         {"$set": {"status": "approved", "approved_by": user["_id"], "updated_at": utcnow()}},
@@ -430,6 +442,10 @@ async def process_refund(fid: str, body: ProcessIn, user: dict = Depends(require
     r = await db.refunds.find_one({"_id": fid})
     if not r:
         raise HTTPException(404, "Refund not found")
+    if r["status"] != "approved":
+        raise HTTPException(409, "Refund must be approved before processing")
+    if user["_id"] in (r.get("requested_by"), r.get("approved_by")):
+        raise HTTPException(403, "Refund requester and approver cannot process the refund")
     return ser(await finance.process_refund(db, r, user, body.note))
 
 

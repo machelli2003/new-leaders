@@ -1,4 +1,5 @@
 from functools import lru_cache
+import ipaddress
 from urllib.parse import urlsplit
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -7,18 +8,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    app_env: str = "development"  # development | test | production
+    app_env: str  # development | test | production
     mongodb_url: str = "mongodb://localhost:27017"
     mongodb_database: str = "new_leaders_hotel"
     # Kept as a compatibility alias for existing deployments.
     database_url: str = "mongodb://localhost:27017"
 
-    jwt_secret: str = "dev-only-change-me-dev-only-change-me"
+    jwt_secret: str
     access_token_minutes: int = 15
     refresh_token_days: int = 7
     bcrypt_rounds: int = 12
     cookie_secure: bool = False
     trust_proxy: bool = False
+    trusted_proxy_cidrs: str = ""
     rate_limit_enabled: bool = True
     redis_url: str = ""
 
@@ -83,6 +85,15 @@ def get_config() -> Settings:
     if s.app_env == "production":
         if s.jwt_secret.startswith("dev-only") or len(s.jwt_secret) < 32:
             raise RuntimeError("JWT_SECRET must be set to a strong random value (>=32 chars) in production")
+        if s.trust_proxy and not s.trusted_proxy_cidrs.strip():
+            raise RuntimeError("TRUSTED_PROXY_CIDRS must be set when TRUST_PROXY=true in production")
+        if s.trusted_proxy_cidrs.strip():
+            try:
+                for cidr in s.trusted_proxy_cidrs.split(","):
+                    if cidr.strip():
+                        ipaddress.ip_network(cidr.strip(), strict=False)
+            except ValueError as exc:
+                raise RuntimeError("TRUSTED_PROXY_CIDRS must contain valid IP addresses or CIDRs") from exc
         if not s.cookie_secure:
             raise RuntimeError("COOKIE_SECURE must be true in production (HTTPS only)")
         if not s.rate_limit_enabled:

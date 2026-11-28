@@ -251,6 +251,46 @@ async def reject_cancellation_request(db, res: dict, user: dict) -> dict:
     return await db.reservations.find_one({"_id": res["_id"]})
 
 
+async def request_change(db, res: dict, message: str) -> dict:
+    message = message.strip()
+    if res["status"] not in ("pending", "confirmed"):
+        raise HTTPException(409, "This booking can no longer be changed online")
+    if not message:
+        raise HTTPException(422, "Describe the change you would like to request")
+    now = utcnow()
+    request = {"message": message, "status": "pending", "requested_at": now}
+    updated = await db.reservations.update_one(
+        {"_id": res["_id"], "status": {"$in": ["pending", "confirmed"]}, "change_request.status": {"$ne": "pending"}},
+        {"$set": {"change_request": request, "updated_at": now}},
+    )
+    if not updated.matched_count:
+        raise HTTPException(409, "A change request is already being reviewed or this booking can no longer be changed")
+    fresh = await db.reservations.find_one({"_id": res["_id"]})
+    await audit(None, "reservation.change_request", "reservation", res["_id"], note=message)
+    admin_path = "/admin/event-bookings" if res.get("booking_type") == "event" else f"/admin/reservations/{res['_id']}"
+    await notify_staff(db, "change_request", f"Guest change request – {res['reference']}", message,
+                       admin_path, "reservations.manage", email=True)
+    await notify_guest(db, "change_request_received", fresh)
+    return fresh
+
+
+async def review_change_request(db, res: dict, user: dict) -> dict:
+    if (res.get("change_request") or {}).get("status") != "pending":
+        raise HTTPException(409, "No pending change request")
+    now = utcnow()
+    updated = await db.reservations.update_one(
+        {"_id": res["_id"], "change_request.status": "pending"},
+        {"$set": {"change_request.status": "reviewed", "change_request.reviewed_at": now,
+                  "change_request.reviewed_by": user["name"], "updated_at": now}},
+    )
+    if not updated.matched_count:
+        raise HTTPException(409, "No pending change request")
+    fresh = await db.reservations.find_one({"_id": res["_id"]})
+    await audit(user, "reservation.change_request_reviewed", "reservation", res["_id"])
+    await notify_guest(db, "change_request_reviewed", fresh)
+    return fresh
+
+
 # ---------------- modification ----------------
 async def _requote(db, res: dict, rrs: list[dict], check_in: str, check_out: str, reason: str, user: dict | None) -> dict:
     settings = await get_settings(db)
@@ -346,8 +386,8 @@ async def assign_room(db, res: dict, rr_id: str, new_room_id: str, user: dict, r
 async def add_charge(db, res: dict, description: str, amount_minor: int, user: dict) -> dict:
     if res["status"] not in ("confirmed", "checked_in", "pending"):
         raise HTTPException(409, "Charges can only be added to active reservations")
-    if amount_minor == 0:
-        raise HTTPException(400, "Amount cannot be zero")
+    if amount_minor <= 0:
+        raise HTTPException(400, "Charge amount must be positive")
     charge = {"id": new_id(), "description": description, "amount_minor": amount_minor, "created_by": user["name"], "created_at": utcnow()}
     await db.reservations.update_one({"_id": res["_id"]}, {"$push": {"charges": charge}})
     await audit(user, "reservation.add_charge", "reservation", res["_id"], after={"description": description, "amount_minor": amount_minor})

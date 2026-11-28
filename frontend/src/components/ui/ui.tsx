@@ -5,7 +5,7 @@ import { cn, titleCase } from '@/lib/utils'
 import { Button } from './button'
 
 export const Card = ({ className, ...p }: HTMLAttributes<HTMLDivElement>) => <div className={cn('rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-sm', className)} {...p} />
-export const CardHeader = ({ className, ...p }: HTMLAttributes<HTMLDivElement>) => <div className={cn('flex items-center justify-between gap-2 border-b border-[var(--border)] px-5 py-3.5', className)} {...p} />
+export const CardHeader = ({ className, ...p }: HTMLAttributes<HTMLDivElement>) => <div className={cn('flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] px-5 py-3.5', className)} {...p} />
 export const CardBody = ({ className, ...p }: HTMLAttributes<HTMLDivElement>) => <div className={cn('p-5', className)} {...p} />
 export const Skeleton = ({ className }: { className?: string }) => <div className={cn('animate-pulse rounded-md bg-[var(--soft)]', className)} />
 
@@ -31,7 +31,7 @@ export const StatusBadge = ({ status }: { status?: string | null }) => status ? 
 export function PageHeader({ title, desc, actions }: { title: string; desc?: string; actions?: ReactNode }) {
   return (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-      <div><h1 className="text-2xl font-semibold">{title}</h1>{desc && <p className="mt-1 text-sm text-[var(--muted)]">{desc}</p>}</div>
+      <div className="min-w-0 flex-1"><h1 className="break-words text-2xl font-semibold">{title}</h1>{desc && <p className="mt-1 break-words text-sm text-[var(--muted)]">{desc}</p>}</div>
       <div className="flex flex-wrap gap-2">{actions}</div>
     </div>
   )
@@ -53,7 +53,7 @@ export function Modal({ open, onOpenChange, title, desc, children, wide }: { ope
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
         <Dialog.Content className={cn('admin-ui fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[95vw] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-xl', wide ? 'max-w-3xl' : 'max-w-lg')}>
-          <div className="mb-4 flex items-start justify-between gap-4">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
             <div><Dialog.Title className="text-lg font-semibold">{title}</Dialog.Title>{desc && <Dialog.Description className="mt-1 text-sm text-[var(--muted)]">{desc}</Dialog.Description>}</div>
             <Dialog.Close className="rounded p-1 hover:bg-[var(--soft)]" aria-label="Close"><X className="h-4 w-4" /></Dialog.Close>
           </div>

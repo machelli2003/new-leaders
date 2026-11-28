@@ -8,7 +8,7 @@ from redis.exceptions import RedisError
 from starlette.requests import Request
 
 from app.config import get_config
-from app.security import RateLimiter, set_rate_limit_redis
+from app.security import RateLimiter, client_ip, set_rate_limit_redis
 
 
 @pytest.fixture(autouse=True)
@@ -62,6 +62,25 @@ async def test_redis_rate_limit_uses_hmac_ip_key_and_accepts_request(
     assert key.startswith("nlh:rate-limit:test:")
     assert "203.0.113.8" not in key
     assert redis_client.call[3:5] == (60000, 2)
+
+
+def test_forwarded_ip_is_ignored_for_untrusted_peer(monkeypatch, request_with_client_ip):
+    monkeypatch.setattr(get_config(), "trust_proxy", True)
+    monkeypatch.setattr(get_config(), "trusted_proxy_cidrs", "127.0.0.1/32")
+    request_with_client_ip.scope["headers"] = [(b"x-forwarded-for", b"198.51.100.50")]
+
+    assert client_ip(request_with_client_ip) == "203.0.113.8"
+
+
+def test_forwarded_ip_is_used_for_trusted_peer(monkeypatch, request_with_client_ip):
+    monkeypatch.setattr(get_config(), "trust_proxy", True)
+    monkeypatch.setattr(get_config(), "trusted_proxy_cidrs", "203.0.113.0/24,192.0.2.0/24")
+    request_with_client_ip.scope["client"] = ("203.0.113.8", 12345)
+    request_with_client_ip.scope["headers"] = [
+        (b"x-forwarded-for", b"198.51.100.99, 198.51.100.50, 192.0.2.10")
+    ]
+
+    assert client_ip(request_with_client_ip) == "198.51.100.50"
 
 
 async def test_redis_rate_limit_returns_retry_after_when_limited(

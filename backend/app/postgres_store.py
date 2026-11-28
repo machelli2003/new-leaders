@@ -470,7 +470,9 @@ class AsyncCollection:
                            sparse: bool = False, expireAfterSeconds: int | None = None, **_: Any) -> str:
         fields = [(keys, 1)] if isinstance(keys, str) else list(keys)
         signature = f"{self.name}:{fields}:{unique}:{sparse}:{expireAfterSeconds}"
-        name = "idx_" + hashlib.sha1(signature.encode()).hexdigest()[:20]
+        name = "idx_" + hashlib.sha1(
+            signature.encode(), usedforsecurity=False
+        ).hexdigest()[:20]
         expressions = ", ".join(
             f"({_path_sql(field)}) {'DESC' if direction < 0 else 'ASC'}" for field, direction in fields
         )

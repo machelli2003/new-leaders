@@ -16,7 +16,7 @@ export function Dashboard() {
   const { can } = useAuth()
   const q = useGet(['dash'], '/reports/dashboard')
   const d = q.data
-  return (<><PageHeader title="Dashboard" desc="Last 30 days unless stated" />
+  return (<><PageHeader title="Dashboard" desc={d?.today ? `Today · ${fmtDate(d.today)} · Trends cover the last 30 days` : 'Today and recent operations'} />
     <QueryState q={q}>{d && <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Today's check-ins" value={d.todays_check_ins} /><Stat label="Today's check-outs" value={d.todays_check_outs} />
@@ -24,6 +24,23 @@ export function Dashboard() {
         <Stat label="Pending reservations" value={d.pending_reservations} /><Stat label="Cancellation requests" value={d.cancellation_requests} />
         <Stat label="Needs attention" value={d.needs_attention} tone={d.needs_attention ? 'warn' : undefined} sub="Paid but no room, etc." /><Stat label="Rooms in maintenance" value={d.rooms_maintenance} />
         {d.total_revenue_minor !== undefined && <><Stat label="Revenue (net)" value={money(d.total_revenue_minor)} /><Stat label="Outstanding balances" value={money(d.outstanding_balances_minor)} /></>}</div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card><CardHeader><h3 className="text-sm font-semibold">Today's arrivals</h3></CardHeader><CardBody className="space-y-2 text-sm">
+          {d.today_arrivals.length ? d.today_arrivals.map((item: any) => <Link key={item.id} to={`/admin/reservations/${item.id}`} className="flex items-center justify-between gap-3 rounded px-2 py-1 hover:bg-[var(--soft)]"><span>{item.reference} · {item.guest}<span className="ml-2 text-xs text-[var(--muted)]">{item.rooms} room(s)</span></span><StatusBadge status={item.status} /></Link>) : <p className="text-[var(--muted)]">No room arrivals today.</p>}
+        </CardBody></Card>
+        <Card><CardHeader><h3 className="text-sm font-semibold">Today's departures</h3></CardHeader><CardBody className="space-y-2 text-sm">
+          {d.today_departures.length ? d.today_departures.map((item: any) => <Link key={item.id} to={`/admin/reservations/${item.id}`} className="flex items-center justify-between gap-3 rounded px-2 py-1 hover:bg-[var(--soft)]"><span>{item.reference} · {item.guest}<span className="ml-2 text-xs text-[var(--muted)]">{item.rooms} room(s)</span></span><StatusBadge status={item.status} /></Link>) : <p className="text-[var(--muted)]">No room departures today.</p>}
+        </CardBody></Card>
+        {can('housekeeping.view') && <Card><CardHeader><h3 className="text-sm font-semibold">Rooms not ready <span className="text-[var(--muted)]">({d.rooms_not_ready?.length ?? 0})</span></h3></CardHeader><CardBody className="space-y-2 text-sm">
+          {d.rooms_not_ready?.length ? d.rooms_not_ready.map((room: any) => <Link key={room.id} to="/admin/housekeeping" className="flex justify-between rounded px-2 py-1 hover:bg-[var(--soft)]"><span>Room {room.number}</span><StatusBadge status={room.status} /></Link>) : <p className="text-[var(--muted)]">All rooms are ready.</p>}
+        </CardBody></Card>}
+        {can('payments.view') && <Card><CardHeader><h3 className="text-sm font-semibold">Overdue balances <span className="text-[var(--muted)]">({d.overdue_balance_count ?? 0})</span></h3></CardHeader><CardBody className="space-y-2 text-sm">
+          {d.overdue_balances?.length ? d.overdue_balances.map((item: any) => <Link key={item.id} to={`/admin/reservations/${item.id}`} className="flex justify-between gap-3 rounded px-2 py-1 hover:bg-[var(--soft)]"><span>{item.reference} · {item.guest}</span><span className="text-amber-700">{money(item.balance_minor)}</span></Link>) : <p className="text-[var(--muted)]">No overdue balances.</p>}
+        </CardBody></Card>}
+        {can('maintenance.manage') && <Card><CardHeader><h3 className="text-sm font-semibold">Open maintenance <span className="text-[var(--muted)]">({d.open_maintenance_count ?? 0})</span></h3></CardHeader><CardBody className="space-y-2 text-sm">
+          {d.open_maintenance?.length ? d.open_maintenance.map((item: any) => <Link key={item.id} to="/admin/maintenance" className="flex justify-between gap-3 rounded px-2 py-1 hover:bg-[var(--soft)]"><span>{item.title}<span className="ml-2 text-xs text-[var(--muted)]">{item.room_numbers?.join(', ')}</span></span><StatusBadge status={item.priority} /></Link>) : <p className="text-[var(--muted)]">No open maintenance requests.</p>}
+        </CardBody></Card>}
+      </div>
       <div className="grid gap-4 lg:grid-cols-2">
         {d.revenue_trend && <Chart title="Revenue (GHS)" data={d.revenue_trend} x="date" y="net_minor" bar money />}
         <Chart title="Occupancy %" data={d.occupancy_trend} x="date" y="occupancy_percent" />

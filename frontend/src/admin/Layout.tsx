@@ -48,7 +48,7 @@ function Notifications() {
   const unread = items.filter((n) => !n.read).length
   return (<div className="relative">
     <button aria-label="Notifications" className="relative rounded-md p-2 hover:bg-[var(--soft)]" onClick={() => setOpen(!open)}><Bell className="h-5 w-5" />{unread > 0 && <span className="absolute right-1 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-red-600 px-1 text-[10px] text-white">{unread}</span>}</button>
-    {open && <div className="absolute right-0 z-40 mt-2 w-80 rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-lg">
+    {open && <div className="fixed right-2 top-14 z-40 w-[calc(100vw-1rem)] max-w-[20rem] rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-lg sm:absolute sm:right-0 sm:top-full sm:mt-2 sm:w-80">
       <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2 text-sm font-medium">Notifications<button className="text-xs text-[var(--primary)]" onClick={() => all.mutate(undefined)}>Mark all read</button></div>
       <ul className="max-h-80 divide-y divide-[var(--border)] overflow-auto">{items.length === 0 && <li className="p-4 text-center text-sm text-[var(--muted)]">Nothing new</li>}
         {items.map((n) => <li key={n.id} className={`p-3 text-sm ${n.read ? 'opacity-60' : ''}`} onClick={() => !n.read && read.mutate(n.id)}><div className="font-medium">{n.title}</div><div className="text-xs text-[var(--muted)]">{n.body}</div><div className="mt-1 text-[10px] text-[var(--muted)]">{fmtDateTime(n.created_at)}</div></li>)}</ul></div>}</div>)

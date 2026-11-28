@@ -229,21 +229,123 @@ async def verify_and_apply(db, reference: str) -> dict:
 
 
 # ---------------- offline ----------------
-async def record_offline(db, res: dict, amount: int, method: str, note: str, user: dict) -> dict:
+async def record_offline(db, res: dict, amount: int, method: str, note: str, user: dict, idempotency_key: str) -> dict:
     from .reservations import confirm_reservation
 
-    if res["status"] in ("cancelled", "expired", "no_show"):
-        raise HTTPException(409, "Cannot record a payment on a closed reservation")
     if amount <= 0:
         raise HTTPException(400, "Amount must be positive")
-    if amount > res["balance"]:
-        raise HTTPException(400, "Amount exceeds the outstanding balance")
-    now = utcnow()
-    p = {"_id": new_id(), "reservation_id": res["_id"], "reservation_reference": res["reference"],
-         "reference": f"NLHO{today().year}{secrets.token_hex(6).upper()}", "amount": amount, "currency": res["pricing"]["currency"],
-         "method": method, "kind": "offline", "status": "success", "note": note, "paid_at": now, "created_at": now,
-         "updated_at": now, "recorded_by": user["_id"], "recorded_by_name": user["name"]}
-    await db.payments.insert_one(p)
+    existing = await db.payments.find_one({"idempotency_key": idempotency_key})
+    if existing:
+        same_request = (
+            existing["reservation_id"] == res["_id"]
+            and existing["amount"] == amount
+            and existing["method"] == method
+            and existing.get("note", "") == note
+            and existing["recorded_by"] == user["_id"]
+        )
+        if not same_request:
+            raise HTTPException(409, "Idempotency key was already used for a different payment")
+        if existing["status"] == "success":
+            await db.reservations.update_one(
+                {"_id": res["_id"], "offline_payment_pending": existing["_id"]},
+                {"$unset": {"offline_payment_pending": ""}},
+            )
+            return existing
+        if existing["status"] != "processing":
+            raise HTTPException(409, "This payment request can no longer be replayed")
+        p = existing
+    else:
+        now = utcnow()
+        p = {
+            "_id": new_id(),
+            "idempotency_key": idempotency_key,
+            "reservation_id": res["_id"],
+            "reservation_reference": res["reference"],
+            "reference": f"NLHO{today().year}{secrets.token_hex(6).upper()}",
+            "amount": amount,
+            "currency": res["pricing"]["currency"],
+            "method": method,
+            "kind": "offline",
+            "status": "processing",
+            "note": note,
+            "paid_at": now,
+            "created_at": now,
+            "updated_at": now,
+            "recorded_by": user["_id"],
+            "recorded_by_name": user["name"],
+        }
+        try:
+            await db.payments.insert_one(p)
+        except DuplicateKeyError:
+            existing = await db.payments.find_one({"idempotency_key": idempotency_key})
+            same_request = existing and (
+                existing["reservation_id"] == res["_id"]
+                and existing["amount"] == amount
+                and existing["method"] == method
+                and existing.get("note", "") == note
+                and existing["recorded_by"] == user["_id"]
+            )
+            if same_request and existing["status"] == "success":
+                return existing
+            raise HTTPException(409, "This payment request is already being processed")
+
+    res = await db.reservations.find_one({"_id": res["_id"]})
+    if not res:
+        await db.payments.delete_one({"_id": p["_id"], "status": "processing"})
+        raise HTTPException(404, "Reservation not found")
+    pending_id = res.get("offline_payment_pending")
+    if pending_id and pending_id != p["_id"]:
+        pending = await db.payments.find_one({"_id": pending_id})
+        if pending and pending.get("status") == "success":
+            await db.reservations.update_one(
+                {"_id": res["_id"], "offline_payment_pending": pending_id},
+                {"$unset": {"offline_payment_pending": ""}},
+            )
+            res = await db.reservations.find_one({"_id": res["_id"]})
+        else:
+            await db.payments.delete_one({"_id": p["_id"], "status": "processing"})
+            raise HTTPException(409, "Another payment is being recorded for this reservation")
+
+    if res.get("offline_payment_pending") != p["_id"]:
+        if res["status"] in ("cancelled", "expired", "no_show"):
+            await db.payments.delete_one({"_id": p["_id"], "status": "processing"})
+            raise HTTPException(409, "Cannot record a payment on a closed reservation")
+        reserved = await db.reservations.update_one(
+            {
+                "_id": res["_id"],
+                "status": {"$nin": ["cancelled", "expired", "no_show"]},
+                "balance": {"$gte": amount},
+                "offline_payment_pending": {"$exists": False},
+            },
+            {
+                "$inc": {"balance": -amount, "amount_paid": amount},
+                "$set": {"offline_payment_pending": p["_id"], "updated_at": utcnow()},
+            },
+        )
+        if not reserved.matched_count:
+            current = await db.reservations.find_one({"_id": res["_id"]})
+            if current and current.get("offline_payment_pending") == p["_id"]:
+                res = current
+            else:
+                await db.payments.delete_one({"_id": p["_id"], "status": "processing"})
+                if current and current["status"] in ("cancelled", "expired", "no_show"):
+                    raise HTTPException(409, "Cannot record a payment on a closed reservation")
+                raise HTTPException(400, "Amount exceeds the outstanding balance")
+
+    completed = await db.payments.update_one(
+        {"_id": p["_id"], "status": "processing"},
+        {"$set": {"status": "success", "updated_at": utcnow()}},
+    )
+    if not completed.matched_count:
+        p = await db.payments.find_one({"_id": p["_id"]})
+        if not p or p["status"] != "success":
+            raise HTTPException(409, "Payment could not be completed; retry with the same idempotency key")
+    else:
+        p["status"] = "success"
+    await db.reservations.update_one(
+        {"_id": res["_id"], "offline_payment_pending": p["_id"]},
+        {"$unset": {"offline_payment_pending": ""}},
+    )
     await _receipt(db, p["_id"])
     p = await db.payments.find_one({"_id": p["_id"]})
     await audit(user, "payment.record", "payment", p["_id"], after={"reservation": res["reference"], "amount": amount, "method": method})
@@ -294,10 +396,12 @@ async def request_refund(db, res: dict, amount: int, reason: str, user: dict | N
 
 async def process_refund(db, refund: dict, user: dict, note: str = "") -> dict:
     previous_status = refund["status"]
-    if previous_status not in ("requested", "approved"):
-        raise HTTPException(409, f"Refund is already {refund['status']}")
+    if previous_status != "approved":
+        raise HTTPException(409, "Refund must be approved before processing")
+    if user["_id"] in (refund.get("requested_by"), refund.get("approved_by")):
+        raise HTTPException(403, "Refund requester and approver cannot process the refund")
     claimed = await db.refunds.find_one_and_update(
-        {"_id": refund["_id"], "status": {"$in": ["requested", "approved"]}},
+        {"_id": refund["_id"], "status": "approved"},
         {"$set": {"status": "processing", "_processing_by": user["_id"], "_processing_started_at": utcnow()}},
         return_document=ReturnDocument.AFTER,
     )

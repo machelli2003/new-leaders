@@ -5,7 +5,7 @@ import { RequireAuth } from '@/lib/auth'
 import { PublicLayout } from '@/public/Layout'
 import Home from '@/public/Home'
 import { About, Rooms, RoomDetail, Facilities, Restaurant, Events, Gallery, Offers, Contact, FAQ, Policy } from '@/public/Pages'
-import { BookingSearch, Checkout, BookingLookup, BookingManage, PaymentSuccess, PaymentFailed } from '@/public/Booking'
+import { BookingSearch, Checkout, BookingLookup, BookingManage, GuestPasswordReset, PaymentSuccess, PaymentFailed } from '@/public/Booking'
 import { EventBooking } from '@/public/EventBooking'
 import { BookingHub } from '@/public/BookingHub'
 
@@ -65,6 +65,7 @@ export default function App() {
           <Route path="booking/search" element={<BookingSearch />} />
           <Route path="booking/checkout" element={<Checkout />} />
           <Route path="booking/lookup" element={<BookingLookup />} />
+          <Route path="booking/password-reset" element={<GuestPasswordReset />} />
           <Route path="booking/payment/success" element={<PaymentSuccess />} />
           <Route path="booking/payment/failed" element={<PaymentFailed />} />
           <Route path="booking/:reference" element={<BookingManage />} />

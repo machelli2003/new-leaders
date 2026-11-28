@@ -149,6 +149,35 @@ export function Checkout() {
 }
 const Row = ({ l, v }: { l: string; v: string }) => <div className="flex justify-between"><span className="text-[#5b665f]">{l}</span><span>{v}</span></div>
 
+function downloadReceipt(booking: any, payment: any, hotelName?: string) {
+  const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[char] as string))
+  const detail = booking.booking_type === 'event'
+    ? `Event: ${booking.event_booking.venue_name} · ${fmtDate(booking.event_booking.date)} · ${booking.event_booking.start_time}–${booking.event_booking.end_time}`
+    : `Stay: ${fmtDate(booking.check_in)} → ${fmtDate(booking.check_out)}`
+  const receipt = payment.receipt_number || payment.reference
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Receipt ${escape(receipt)}</title>
+    <style>body{font:16px Arial,sans-serif;max-width:680px;margin:40px auto;padding:24px;color:#24352b}h1{color:#2f5d46}table{width:100%;border-collapse:collapse;margin-top:24px}td{padding:10px 0;border-bottom:1px solid #ddd}td:last-child{text-align:right;font-weight:600}.muted{color:#65736a}</style></head>
+    <body><h1>${escape(hotelName || 'New Leaders Hotel & Events Centre')}</h1><h2>Payment receipt</h2>
+    <p class="muted">Receipt ${escape(receipt)}</p><table>
+    <tr><td>Booking reference</td><td>${escape(booking.reference)}</td></tr>
+    <tr><td>Guest</td><td>${escape(booking.guest?.name)}</td></tr>
+    <tr><td>${escape(detail)}</td><td></td></tr>
+    <tr><td>Payment method</td><td>${escape(payment.method)}</td></tr>
+    <tr><td>Payment date</td><td>${escape(fmtDateTime(payment.paid_at))}</td></tr>
+    <tr><td>Amount received</td><td>${escape(money(payment.amount, booking.pricing.currency))}</td></tr>
+    </table></body></html>`
+  const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `receipt-${String(receipt).replace(/[^a-zA-Z0-9._-]/g, '-')}.html`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 // ---------------- Lookup & manage ----------------
 export function BookingLookup() {
   const nav = useNavigate()
@@ -167,7 +196,51 @@ export function BookingLookup() {
       }}>
         <Field label="Booking reference"><Input required value={ref} onChange={(e) => setRef(e.target.value)} placeholder="NLH-2026-000123" /></Field>
         <Field label="Email or WhatsApp number"><Input required value={contact} onChange={(e) => setContact(e.target.value)} /></Field>
-        <Button variant="gold" className="w-full">Find booking</Button></form></CardBody></Card></Container></>)
+        <Button variant="gold" className="w-full">Find booking</Button></form>
+      <p className="mt-4 text-center text-sm"><Link className="underline" to="/booking/password-reset">Forgot your guest account password?</Link></p>
+    </CardBody></Card></Container></>)
+}
+
+export function GuestPasswordReset() {
+  const token = new URLSearchParams(window.location.hash.slice(1)).get('token') ?? ''
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [requested, setRequested] = useState(false)
+  const [reset, setReset] = useState(false)
+  const request = useMutation({
+    mutationFn: () => api('/bookings/account/password-reset/request', { body: { email }, auth: false }),
+    onSuccess: () => setRequested(true),
+    onError: (e) => toast.error(errMsg(e)),
+  })
+  const confirm = useMutation({
+    mutationFn: () => api('/bookings/account/password-reset/confirm', { body: { token, password }, auth: false }),
+    onSuccess: () => setReset(true),
+    onError: (e) => toast.error(errMsg(e)),
+  })
+
+  return (<><Seo title="Reset password" path="/booking/password-reset" noindex />
+    <PageHero title="Reset your password" sub="Reset the password for your guest account." />
+    <Container className="max-w-md py-12"><Card className="border-sand bg-white"><CardBody className="space-y-4">
+      {reset ? <div role="status" className="space-y-3 text-center">
+        <p>Your guest account password has been updated.</p>
+        <Link className="underline" to="/booking/lookup">Return to booking lookup</Link>
+      </div> : token ? <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); confirm.mutate() }}>
+        <Field label="New password" hint="Use at least 12 characters with at least three character types.">
+          <Input type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={password}
+            onChange={(e) => setPassword(e.target.value)} />
+        </Field>
+        <Button type="submit" variant="gold" className="w-full" loading={confirm.isPending}>Reset password</Button>
+      </form> : requested ? <div role="status" className="text-center">
+        If an account exists for that email, reset instructions will be sent.
+      </div> : <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); request.mutate() }}>
+        <Field label="Email address">
+          <Input type="email" autoComplete="email" maxLength={254} required value={email}
+            onChange={(e) => setEmail(e.target.value)} />
+        </Field>
+        <Button type="submit" variant="gold" className="w-full" loading={request.isPending}>Send reset link</Button>
+      </form>}
+    </CardBody></Card></Container>
+  </>)
 }
 
 export function BookingManage() {
@@ -177,10 +250,12 @@ export function BookingManage() {
   const contact = email ? { email } : { phone }
   const { data: site } = useSite()
   const [cancelOpen, setCancelOpen] = useState(false); const [reason, setReason] = useState('')
+  const [changeOpen, setChangeOpen] = useState(false); const [changeMessage, setChangeMessage] = useState('')
   const q = useQuery({ queryKey: ['booking', reference, email, phone], enabled: !!(email || phone), retry: false, queryFn: () => api<any>('/bookings/lookup', { auth: false, body: { reference, ...contact } }) })
   const prev = useQuery({ queryKey: ['cprev', reference, email, phone], enabled: cancelOpen, queryFn: () => api<any>('/bookings/cancel-preview', { auth: false, body: { reference, ...contact } }) })
   const pay = useMutation({ mutationFn: (option: string) => api<any>('/bookings/pay', { auth: false, body: { reference, ...contact, option } }), onSuccess: (r) => { window.location.href = r.authorization_url }, onError: (e) => toast.error(errMsg(e)) })
   const cancel = useMutation({ mutationFn: () => api<any>('/bookings/cancel-request', { auth: false, body: { reference, ...contact, reason } }), onSuccess: () => { toast.success('Cancellation request sent'); setCancelOpen(false); q.refetch() }, onError: (e) => toast.error(errMsg(e)) })
+  const change = useMutation({ mutationFn: () => api<any>('/bookings/change-request', { auth: false, body: { reference, ...contact, message: changeMessage } }), onSuccess: () => { toast.success('Change request sent'); setChangeOpen(false); setChangeMessage(''); q.refetch() }, onError: (e) => toast.error(errMsg(e)) })
   const b = q.data
   if (!email && !phone) return <BookingLookup />
   const whatsapp = b && whatsappBookingUrl(site?.profile?.socials?.whatsapp, bookingWhatsAppMessage(b, site?.profile?.name))
@@ -193,6 +268,7 @@ export function BookingManage() {
           <div className="flex flex-wrap items-center gap-2"><StatusBadge status={b.status} /><StatusBadge status={b.payment_status} /></div>
           {b.status === 'pending' && b.hold_expires_at && <p className="flex items-start gap-2 rounded bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-4 w-4 shrink-0" />Your {b.booking_type === 'event' ? 'event time' : 'room'} is held until {fmtDateTime(b.hold_expires_at)}. Complete payment to confirm it.</p>}
           {b.status === 'cancellation_requested' && <p className="rounded bg-sky-50 p-3 text-sm text-sky-900">Your cancellation request is being reviewed by the hotel.</p>}
+          {b.change_request && <p className="rounded bg-sky-50 p-3 text-sm text-sky-900">Change request {b.change_request.status}: {b.change_request.message}</p>}
           <dl className="grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-[#7a847e]">Guest</dt><dd>{b.guest.name}</dd></div>
             {b.booking_type === 'event' ? <>
               <div><dt className="text-[#7a847e]">Venue</dt><dd>{b.event_booking.venue_name}</dd></div>
@@ -204,7 +280,7 @@ export function BookingManage() {
               <div><dt className="text-[#7a847e]">Rooms</dt><dd>{b.rooms?.filter((r: any) => r.status !== 'cancelled').map((r: any) => r.category_name).join(', ')}</dd></div>
             </>}</dl>
           <div className="space-y-1 border-t border-sand pt-3 text-sm"><Row l="Total" v={money(b.total_amount, b.pricing.currency)} /><Row l="Paid" v={money(b.amount_paid, b.pricing.currency)} /><div className="flex justify-between font-semibold text-forest-800"><span>Balance</span><span>{money(b.balance, b.pricing.currency)}</span></div></div>
-          {b.payments?.length > 0 && <div className="border-t border-sand pt-3 text-xs text-[#5b665f]"><div className="mb-1 font-medium">Payments</div>{b.payments.map((p: any) => <div key={p.reference} className="flex justify-between"><span>{p.receipt_number} · {p.method}</span><span>{money(p.amount, b.pricing.currency)}</span></div>)}</div>}
+          {b.payments?.length > 0 && <div className="border-t border-sand pt-3 text-xs text-[#5b665f]"><div className="mb-1 font-medium">Payments</div>{b.payments.map((p: any) => <div key={p.reference} className="flex flex-wrap items-center justify-between gap-2 py-1"><span>{p.receipt_number || p.reference} · {p.method}</span><span className="flex items-center gap-2">{money(p.amount, b.pricing.currency)} <Button size="sm" variant="outline" onClick={() => downloadReceipt(b, p, site?.profile?.name)}>Download receipt</Button></span></div>)}<p className="mt-1">Receipts download as HTML files that you can print or save as PDF.</p></div>}
         </CardBody></Card>
         <div className="flex flex-wrap gap-3 no-print">
           {b.guest.email && b.payment_options?.deposit && <Button variant="gold" loading={pay.isPending} onClick={() => pay.mutate('deposit')}>Pay deposit {money(b.payment_options.deposit, b.pricing.currency)}</Button>}
@@ -212,8 +288,13 @@ export function BookingManage() {
           {!b.guest.email && b.payment_options && <p className="w-full text-sm text-[#5b665f]">Online payment requires an email address for Paystack. Contact the hotel to add one to this booking.</p>}
           {whatsapp && <Button asChild variant="outline"><a href={whatsapp} target="_blank" rel="noreferrer noopener">Open WhatsApp to share booking details</a></Button>}
           <Button variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4" />Print</Button>
+          {['pending', 'confirmed'].includes(b.status) && b.change_request?.status !== 'pending' && <Button variant="outline" onClick={() => setChangeOpen((open) => !open)}>Request a change</Button>}
           {['pending', 'confirmed'].includes(b.status) && <Button variant="ghost" className="text-red-700" onClick={() => setCancelOpen(true)}>Request cancellation</Button>}
         </div>
+        {changeOpen && <Card className="border-sand bg-white"><CardBody className="space-y-3"><h3 className="text-xl font-semibold">Request a booking change</h3>
+          <p className="text-sm text-[#5b665f]">Tell us what you would like changed. The hotel will review the request; this does not change your booking automatically.</p>
+          <Textarea maxLength={1000} placeholder="Describe the change you would like (dates, guest count, or other details)" value={changeMessage} onChange={(e) => setChangeMessage(e.target.value)} />
+          <div className="flex gap-2"><Button variant="gold" disabled={changeMessage.trim().length < 5} loading={change.isPending} onClick={() => change.mutate()}>Send request</Button><Button variant="outline" onClick={() => setChangeOpen(false)}>Close</Button></div></CardBody></Card>}
         {cancelOpen && <Card className="border-red-200 bg-white"><CardBody className="space-y-3"><h3 className="text-xl font-semibold">Request cancellation</h3>
           {prev.data && <p className="rounded bg-stone-50 p-3 text-sm">{prev.data.free_cancellation ? 'Free cancellation applies.' : `A cancellation fee of ${money(prev.data.fee_minor, b.pricing.currency)} may apply.`} {b.amount_paid > 0 && <>Based on current policy, up to {money(prev.data.refundable_minor, b.pricing.currency)} would be eligible for refund. Refunds are reviewed and approved by the hotel.</>}</p>}
           <Textarea placeholder="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />

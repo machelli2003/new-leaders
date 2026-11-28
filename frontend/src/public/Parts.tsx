@@ -38,7 +38,7 @@ export function Heading({ eyebrow, title, desc, center, light }: { eyebrow?: str
   )
 }
 export function PageHero({ title, sub }: { title: string; sub?: string }) {
-  return <div className="bg-forest-800 py-16 text-center text-white"><Container className="animate-fade-up"><h1 className="text-5xl font-semibold">{title}</h1>{sub && <p className="mx-auto mt-3 max-w-2xl text-white/80">{sub}</p>}</Container></div>
+  return <div className="bg-forest-800 py-12 text-center text-white sm:py-16"><Container className="animate-fade-up"><h1 className="break-words text-4xl font-semibold sm:text-5xl">{title}</h1>{sub && <p className="mx-auto mt-3 max-w-2xl text-white/80">{sub}</p>}</Container></div>
 }
 export const Prose = ({ text }: { text?: string }) => <div className="max-w-3xl space-y-4 leading-relaxed text-[#38443d]">{(text ?? '').split(/\n{2,}/).filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}</div>
 export const Pending = ({ what }: { what: string }) => <p className="rounded-lg border border-dashed border-gold-400 bg-gold-300/10 p-6 text-center text-sm text-[#6b5a2e]">{what} will appear here once the hotel publishes it from the dashboard.</p>
@@ -115,8 +115,8 @@ export function RoomCard({ room, shuffleImages = false }: { room: any; shuffleIm
   return (
     <Card className="group overflow-hidden border-sand bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
       <Link to={`/rooms/${room.slug}`} className="relative block aspect-[4/3] overflow-hidden">
-        <Img media={images[imageTransition.previous] ?? room.main_image} className="absolute inset-0 h-full w-full" sizes="(min-width:1024px) 33vw, 100vw" label={room.name} />
-        <Img key={imageTransition.current} media={images[imageTransition.current] ?? room.main_image} className="animate-room-image absolute inset-0 h-full w-full" sizes="(min-width:1024px) 33vw, 100vw" label={room.name} />
+        <Img media={images[imageTransition.previous]} className="absolute inset-0 h-full w-full" sizes="(min-width:1024px) 33vw, 100vw" label={room.name} />
+        <Img key={imageTransition.current} media={images[imageTransition.current]} className="animate-room-image absolute inset-0 h-full w-full" sizes="(min-width:1024px) 33vw, 100vw" label={room.name} />
       </Link>
       <div className="space-y-3 p-5">
         <div className="flex items-start justify-between gap-3"><h3 className="text-2xl font-semibold text-forest-800">{room.name}</h3>

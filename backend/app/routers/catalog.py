@@ -11,7 +11,7 @@ from ..db import get_db
 from ..security import require
 from ..services import availability as av
 from ..utils import new_id, paginate, ser, slugify, today, utcnow
-from .common import partial
+from .common import literal_search_regex, partial
 
 router = APIRouter(tags=["rooms"])
 Status = Literal["draft", "published", "archived"]
@@ -218,7 +218,7 @@ async def list_rooms(category_id: str | None = None, q: str | None = None, inclu
     if category_id:
         query["category_id"] = category_id
     if q:
-        query["number"] = {"$regex": q, "$options": "i"}
+        query["number"] = literal_search_regex(q)
     rooms = await db.rooms.find(query).sort([("number", 1)]).to_list(None)
     status = await room_display_status(db, rooms)
     cats = {c["_id"]: c["name"] for c in await db.room_categories.find({}).to_list(None)}
